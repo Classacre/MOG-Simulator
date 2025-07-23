@@ -1,0 +1,64 @@
+/* Custom styles for MOG-Simulator */
+
+/* Pixel art rendering */
+.pixelated {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Custom scrollbar for event log */
+.event-log::-webkit-scrollbar {
+  width: 8px;
+}
+
+.event-log::-webkit-scrollbar-track {
+  background: #1f2937;
+  border-radius: 4px;
+}
+
+.event-log::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 4px;
+}
+
+.event-log::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Grid cell styles */
+.cell {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+}
+
+.cell-wall {
+  background-color: #1f2937;
+}
+
+.cell-path {
+  background-color: #4b5563;
+}
+
+.cell-basin {
+  background-color: #047857;
+}
+
+.cell-dungeon {
+  background-color: #7c3aed;
+}
+
+/* Agent dot styles */
+.agent {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+
+/* Notable character highlight */
+.notable {
+  box-shadow: 0 0 4px 2px #fcd34d;
+}
