@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useReducer, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 import MazeGrid from './components/MazeGrid/MazeGrid';
 import SVGMazeGrid from './components/MazeGrid/SVGMazeGrid';
 import { Cell } from './models/Cell';
 import { Basin } from './models/Basin';
-import { Dungeon } from './models/Dungeon';
+import type { Dungeon } from './models/Dungeon';
 import type { DungeonEvent } from './models/Dungeon';
 import { Agent } from './models/Agent';
 import type { IAgent, Birthright } from './models/types';
@@ -21,70 +21,100 @@ import {
   exportToFile,
   importFromFile
 } from './utils/saveLoad';
+import { appReducer, type AppState } from './state';
 
-function App() {
-  // Simulation state
-  const [isSimulationRunning, setIsSimulationRunning] = useState(false);
-  const [simulationSpeed, setSimulationSpeed] = useState(5);
-  const [currentDay, setCurrentDay] = useState(0);
-  const [isSkipping, setIsSkipping] = useState(false);
-  const [skipDays, setSkipDays] = useState(10);
-  
-  // History and filtering
-  const [historyFilter, setHistoryFilter] = useState<'all' | 'agent' | 'basin' | 'dungeon'>('all');
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
-  const [filteredEvents, setFilteredEvents] = useState<string[]>([]);
-  
-  // Save/Load
-  const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const [loadModalOpen, setLoadModalOpen] = useState(false);
-  const [saveName, setSaveName] = useState('');
-  const [saveList, setSaveList] = useState<string[]>([]);
-  const [selectedSave, setSelectedSave] = useState<string | null>(null);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  
-  // UI enhancements
-  const [showConfirmation, setShowConfirmation] = useState(false);
-  const [confirmationAction, setConfirmationAction] = useState<() => void>(() => {});
-  const [confirmationMessage, setConfirmationMessage] = useState('');
-  const [showTooltip, setShowTooltip] = useState<string | null>(null);
-  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const [showHelp, setShowHelp] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [newEventHighlight, setNewEventHighlight] = useState(false);
-  
-  // User preferences
-  const [preferences, setPreferences] = useState({
+const initialState: AppState = {
+  isSimulationRunning: false,
+  simulationSpeed: 5,
+  currentDay: 0,
+  isSkipping: false,
+  skipDays: 10,
+  historyFilter: 'all',
+  selectedHistoryId: null,
+  filteredEvents: [],
+  saveModalOpen: false,
+  loadModalOpen: false,
+  saveName: '',
+  saveList: [],
+  selectedSave: null,
+  importFile: null,
+  showConfirmation: false,
+  confirmationAction: null,
+  confirmationMessage: '',
+  showTooltip: null,
+  tooltipPosition: { x: 0, y: 0 },
+  showHelp: false,
+  showSettings: false,
+  newEventHighlight: false,
+  preferences: {
     darkMode: true,
     showEventNotifications: true,
     autoSaveEnabled: false,
-    autoSaveInterval: 10, // minutes
+    autoSaveInterval: 10,
     highlightNotableAgents: true,
     soundEffects: false,
     compactUI: false,
-    useSVGMode: false // Toggle between regular and SVG rendering
-  });
+    useSVGMode: false
+  },
+  mazeSeed: '',
+  mazeWidth: 50,
+  mazeHeight: 50,
+  basinCount: 3,
+  populationPerBasin: 100,
+  initialCasualtyRate: 20,
+  grid: [],
+  basins: [],
+  dungeons: [],
+  agents: [],
+  selectedAgent: null,
+  selectedDungeon: null,
+  notableAgents: [],
+  events: [],
+  dungeonEvents: []
+};
 
-  // Maze configuration
-  const [mazeSeed, setMazeSeed] = useState('');
-  const [mazeWidth, setMazeWidth] = useState(50);
-  const [mazeHeight, setMazeHeight] = useState(50);
-  const [basinCount, setBasinCount] = useState(3);
-  const [populationPerBasin, setPopulationPerBasin] = useState(100);
-  const [initialCasualtyRate, setInitialCasualtyRate] = useState(20);
-
-  // Maze state
-  const [grid, setGrid] = useState<Cell[][]>([]);
-  const [basins, setBasins] = useState<Basin[]>([]);
-  const [dungeons, setDungeons] = useState<Dungeon[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
-  const [selectedDungeon, setSelectedDungeon] = useState<Dungeon | null>(null);
-  const [notableAgents, setNotableAgents] = useState<Agent[]>([]);
-
-  // Event log
-  const [events, setEvents] = useState<string[]>([]);
-  const [dungeonEvents, setDungeonEvents] = useState<DungeonEvent[]>([]);
+function App() {
+  const [state, dispatch] = useReducer(appReducer, initialState);
+  const {
+    isSimulationRunning,
+    simulationSpeed,
+    currentDay,
+    isSkipping,
+    skipDays,
+    historyFilter,
+    selectedHistoryId,
+    filteredEvents,
+    saveModalOpen,
+    loadModalOpen,
+    saveName,
+    saveList,
+    selectedSave,
+    importFile,
+    showConfirmation,
+    confirmationAction,
+    confirmationMessage,
+    showTooltip,
+    tooltipPosition,
+    showHelp,
+    showSettings,
+    newEventHighlight,
+    preferences,
+    mazeSeed,
+    mazeWidth,
+    mazeHeight,
+    basinCount,
+    populationPerBasin,
+    initialCasualtyRate,
+    grid,
+    basins,
+    dungeons,
+    agents,
+    selectedAgent,
+    selectedDungeon,
+    notableAgents,
+    events,
+    dungeonEvents
+  } = state;
 
   // Simulation animation frame ref
   const intervalRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
@@ -135,7 +165,7 @@ function App() {
     if (isSkipping) {
       // Disable normal simulation while skipping
       if (isSimulationRunning) {
-        setIsSimulationRunning(false);
+        dispatch({ type: 'SET_IS_SIMULATION_RUNNING', payload: false });
       }
       
       let daysSkipped = 0;
@@ -144,7 +174,7 @@ function App() {
         daysSkipped++;
         
         if (daysSkipped >= skipDays) {
-          setIsSkipping(false);
+          dispatch({ type: 'SET_IS_SKIPPING', payload: false });
           clearInterval(skipInterval);
         }
       }, 50); // Process days much faster when skipping
@@ -157,13 +187,13 @@ function App() {
 
   // Generate a new maze
   const generateMaze = () => {
-    setIsSimulationRunning(false);
-    setCurrentDay(0);
-    setEvents([]);
-    setSelectedAgent(null);
+    dispatch({ type: 'SET_IS_SIMULATION_RUNNING', payload: false });
+    dispatch({ type: 'SET_CURRENT_DAY', payload: 0 });
+    dispatch({ type: 'SET_EVENTS', payload: [] });
+    dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
 
     const seed = mazeSeed || Math.random().toString(36).substring(2, 15);
-    setMazeSeed(seed);
+    dispatch({ type: 'SET_MAZE_SEED', payload: seed });
 
     const { grid, basins, dungeons } = generateCompleteMaze(
       mazeWidth,
@@ -173,12 +203,12 @@ function App() {
       seed
     );
 
-    setGrid(grid);
-    setBasins(basins);
-    setDungeons(dungeons);
+    dispatch({ type: 'SET_GRID', payload: grid });
+    dispatch({ type: 'SET_BASINS', payload: basins });
+    dispatch({ type: 'SET_DUNGEONS', payload: dungeons });
 
     const newAgents = generateAgents(basins, populationPerBasin, initialCasualtyRate);
-    setAgents(newAgents);
+    dispatch({ type: 'SET_AGENTS', payload: newAgents });
 
     const initialEvents = [
       `Day 0: Simulation initialized with seed "${seed}"`,
@@ -187,12 +217,12 @@ function App() {
       `Day 0: Populated with ${newAgents.length} agents (${newAgents.filter(a => a.status === 'alive').length} alive)`
     ];
 
-    setEvents(initialEvents);
-    setDungeonEvents([]);
-    setNotableAgents([]);
-    setFilteredEvents(initialEvents);
-    setHistoryFilter('all');
-    setSelectedHistoryId(null);
+    dispatch({ type: 'SET_EVENTS', payload: initialEvents });
+    dispatch({ type: 'SET_DUNGEON_EVENTS', payload: [] });
+    dispatch({ type: 'SET_NOTABLE_AGENTS', payload: [] });
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: initialEvents });
+    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'all' });
+    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: null });
   };
 
   // Generate agents for each basin
@@ -349,20 +379,20 @@ function App() {
     
     // Performance optimization: Batch all state updates
     // React will batch these updates in a single render cycle
-    setCurrentDay(newDay);
-    setEvents(newEvents);
-    setDungeonEvents(newDungeonEventsState);
-    setAgents([...agents]); // Force update for agent state changes
-    setDungeons([...dungeons]); // Force update for dungeon state changes
-    setNotableAgents(notable);
+    dispatch({ type: 'SET_CURRENT_DAY', payload: newDay });
+    dispatch({ type: 'SET_EVENTS', payload: newEvents });
+    dispatch({ type: 'SET_DUNGEON_EVENTS', payload: newDungeonEventsState });
+    dispatch({ type: 'SET_AGENTS', payload: [...agents] }); // Force update for agent state changes
+    dispatch({ type: 'SET_DUNGEONS', payload: [...dungeons] }); // Force update for dungeon state changes
+    dispatch({ type: 'SET_NOTABLE_AGENTS', payload: notable });
     
     // Update filtered events based on current filter
     updateFilteredEvents(newEvents);
     
     // Flash event log if new events and notifications are enabled
     if (formattedEvents.length > 0 && preferences.showEventNotifications) {
-      setNewEventHighlight(true);
-      setTimeout(() => setNewEventHighlight(false), 1000);
+      dispatch({ type: 'SET_NEW_EVENT_HIGHLIGHT', payload: true });
+      setTimeout(() => dispatch({ type: 'SET_NEW_EVENT_HIGHLIGHT', payload: false }), 1000);
     }
     
     // Auto-save if enabled
@@ -384,14 +414,14 @@ function App() {
       saveToLocalStorage(autoSaveName, saveData);
       
       // Update save list
-      setSaveList(getSaveList());
+      dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
     }
   };
   
   // Update filtered events based on filter settings
   const updateFilteredEvents = (allEvents: string[]) => {
     if (historyFilter === 'all' || !selectedHistoryId) {
-      setFilteredEvents(allEvents);
+      dispatch({ type: 'SET_FILTERED_EVENTS', payload: allEvents });
       return;
     }
     
@@ -428,22 +458,25 @@ function App() {
       filtered = allEvents;
     }
     
-    setFilteredEvents(filtered);
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: filtered });
   };
 
   // Toggle simulation running state
   const toggleSimulation = useCallback(() => {
-    setIsSimulationRunning(!isSimulationRunning);
-  }, [isSimulationRunning]);
+    dispatch({ type: 'TOGGLE_SIMULATION' });
+  }, []);
 
   // Reset simulation with confirmation
   const resetSimulation = useCallback(() => {
-    setConfirmationMessage('Are you sure you want to reset the simulation? All progress will be lost.');
-    setConfirmationAction(() => () => {
-      generateMaze();
-      setShowConfirmation(false);
+    dispatch({ type: 'SET_CONFIRMATION_MESSAGE', payload: 'Are you sure you want to reset the simulation? All progress will be lost.' });
+    dispatch({
+      type: 'SET_CONFIRMATION_ACTION',
+      payload: () => {
+        generateMaze();
+        dispatch({ type: 'SET_SHOW_CONFIRMATION', payload: false });
+      },
     });
-    setShowConfirmation(true);
+    dispatch({ type: 'SET_SHOW_CONFIRMATION', payload: true });
   }, []);
   
   // Handle keyboard shortcuts
@@ -472,20 +505,20 @@ function App() {
         case 's': // S - save simulation
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
-            setSaveModalOpen(true);
+            dispatch({ type: 'SET_SAVE_MODAL_OPEN', payload: true });
           }
           break;
         case 'l': // L - load simulation
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
-            setSaveList(getSaveList());
-            setLoadModalOpen(true);
+            dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
+            dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: true });
           }
           break;
         case 'h': // H - toggle help
           if (e.ctrlKey || e.metaKey) {
             e.preventDefault();
-            setShowHelp(!showHelp);
+            dispatch({ type: 'SET_SHOW_HELP', payload: !showHelp });
           }
           break;
         default:
@@ -502,15 +535,15 @@ function App() {
       
   // Show tooltip for UI elements
   const handleShowTooltip = (text: string, e: React.MouseEvent) => {
-    setShowTooltip(text);
-    setTooltipPosition({
+    dispatch({ type: 'SET_SHOW_TOOLTIP', payload: text });
+    dispatch({ type: 'SET_TOOLTIP_POSITION', payload: {
       x: e.clientX,
       y: e.clientY + 10 // Offset to show below cursor
-    });
+    }});
   };
   
   const handleHideTooltip = () => {
-    setShowTooltip(null);
+    dispatch({ type: 'SET_SHOW_TOOLTIP', payload: null });
   };
 
   // Handle cell click
@@ -519,11 +552,11 @@ function App() {
     if (cell.type === 'dungeon' && cell.dungeonId) {
       const dungeon = dungeons.find(d => d.id === cell.dungeonId);
       if (dungeon) {
-        setSelectedDungeon(dungeon);
-        setSelectedAgent(null); // Deselect agent when selecting dungeon
+        dispatch({ type: 'SET_SELECTED_DUNGEON', payload: dungeon });
+        dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
       }
     } else {
-      setSelectedDungeon(null); // Deselect dungeon when clicking non-dungeon cell
+      dispatch({ type: 'SET_SELECTED_DUNGEON', payload: null });
     }
   };
 
@@ -531,29 +564,29 @@ function App() {
   const handleAgentClick = (agent: IAgent) => {
     const agentInstance = agents.find(a => a.id === agent.id);
     if (agentInstance) {
-      setSelectedAgent(agentInstance);
-      setSelectedDungeon(null); // Deselect dungeon when selecting agent
+      dispatch({ type: 'SET_SELECTED_AGENT', payload: agentInstance });
+      dispatch({ type: 'SET_SELECTED_DUNGEON', payload: null });
     }
   };
   
   // Set history filter to view events for a specific agent
   const viewAgentHistory = (agentId: string) => {
-    setHistoryFilter('agent');
-    setSelectedHistoryId(agentId);
+    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'agent' });
+    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: agentId });
     updateFilteredEvents(events);
   };
   
   // Set history filter to view events for a specific basin
   const viewBasinHistory = (basinId: string) => {
-    setHistoryFilter('basin');
-    setSelectedHistoryId(basinId);
+    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'basin' });
+    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: basinId });
     updateFilteredEvents(events);
   };
   
   // Set history filter to view events for a specific dungeon
   const viewDungeonHistory = (dungeonId: string) => {
-    setHistoryFilter('dungeon');
-    setSelectedHistoryId(dungeonId);
+    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'dungeon' });
+    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: dungeonId });
     updateFilteredEvents(events);
   };
   
@@ -577,9 +610,9 @@ function App() {
     saveToLocalStorage(saveName, saveData);
     
     // Update save list
-    setSaveList(getSaveList());
-    setSaveModalOpen(false);
-    setSaveName('');
+    dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
+    dispatch({ type: 'SET_SAVE_MODAL_OPEN', payload: false });
+    dispatch({ type: 'SET_SAVE_NAME', payload: '' });
   };
   
   // Load a saved simulation state
@@ -592,28 +625,28 @@ function App() {
     const state = loadSimulation(saveData);
     
     // Update state with loaded data
-    setMazeSeed(state.seed);
-    setCurrentDay(state.currentDay);
-    setMazeWidth(state.mazeWidth);
-    setMazeHeight(state.mazeHeight);
-    setGrid(state.grid);
-    setBasins(state.basins);
-    setDungeons(state.dungeons);
-    setAgents(state.agents);
-    setEvents(state.events);
-    setFilteredEvents(state.events);
+    dispatch({ type: 'SET_MAZE_SEED', payload: state.seed });
+    dispatch({ type: 'SET_CURRENT_DAY', payload: state.currentDay });
+    dispatch({ type: 'SET_MAZE_WIDTH', payload: state.mazeWidth });
+    dispatch({ type: 'SET_MAZE_HEIGHT', payload: state.mazeHeight });
+    dispatch({ type: 'SET_GRID', payload: state.grid });
+    dispatch({ type: 'SET_BASINS', payload: state.basins });
+    dispatch({ type: 'SET_DUNGEONS', payload: state.dungeons });
+    dispatch({ type: 'SET_AGENTS', payload: state.agents });
+    dispatch({ type: 'SET_EVENTS', payload: state.events });
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: state.events });
     
     // Close modal
-    setLoadModalOpen(false);
-    setSelectedSave(null);
+    dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: false });
+    dispatch({ type: 'SET_SELECTED_SAVE', payload: null });
   };
   
   // Delete a saved simulation state
   const handleDelete = (name: string) => {
     deleteSave(name);
-    setSaveList(getSaveList());
+    dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
     if (selectedSave === name) {
-      setSelectedSave(null);
+      dispatch({ type: 'SET_SELECTED_SAVE', payload: null });
     }
   };
   
@@ -644,20 +677,20 @@ function App() {
       const state = loadSimulation(saveData);
       
       // Update state with loaded data
-      setMazeSeed(state.seed);
-      setCurrentDay(state.currentDay);
-      setMazeWidth(state.mazeWidth);
-      setMazeHeight(state.mazeHeight);
-      setGrid(state.grid);
-      setBasins(state.basins);
-      setDungeons(state.dungeons);
-      setAgents(state.agents);
-      setEvents(state.events);
-      setFilteredEvents(state.events);
+      dispatch({ type: 'SET_MAZE_SEED', payload: state.seed });
+      dispatch({ type: 'SET_CURRENT_DAY', payload: state.currentDay });
+      dispatch({ type: 'SET_MAZE_WIDTH', payload: state.mazeWidth });
+      dispatch({ type: 'SET_MAZE_HEIGHT', payload: state.mazeHeight });
+      dispatch({ type: 'SET_GRID', payload: state.grid });
+      dispatch({ type: 'SET_BASINS', payload: state.basins });
+      dispatch({ type: 'SET_DUNGEONS', payload: state.dungeons });
+      dispatch({ type: 'SET_AGENTS', payload: state.agents });
+      dispatch({ type: 'SET_EVENTS', payload: state.events });
+      dispatch({ type: 'SET_FILTERED_EVENTS', payload: state.events });
       
       // Close modal
-      setLoadModalOpen(false);
-      setImportFile(null);
+      dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: false });
+      dispatch({ type: 'SET_IMPORT_FILE', payload: null });
     } catch (error) {
       console.error('Failed to import file:', error);
     }
@@ -665,9 +698,9 @@ function App() {
   
   // Reset history filter to view all events
   const resetHistoryFilter = () => {
-    setHistoryFilter('all');
-    setSelectedHistoryId(null);
-    setFilteredEvents(events);
+    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'all' });
+    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: null });
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: events });
   };
 
   return (
@@ -679,8 +712,9 @@ function App() {
         </div>
         <div className="flex items-center space-x-2">
           <button
-            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm"
-            onClick={() => setShowHelp(true)}
+            id="helpButton"
+            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm cursor-pointer"
+            onClick={() => dispatch({ type: 'SET_SHOW_HELP', payload: true })}
             onMouseEnter={(e) => handleShowTooltip('View help and keyboard shortcuts', e)}
             onMouseLeave={handleHideTooltip}
           >
@@ -706,8 +740,8 @@ function App() {
                 onAgentClick={handleAgentClick}
                 onBasinClick={(basin) => viewBasinHistory(basin.id)}
                 onDungeonClick={(dungeon) => {
-                  setSelectedDungeon(dungeon);
-                  setSelectedAgent(null);
+                  dispatch({ type: 'SET_SELECTED_DUNGEON', payload: dungeon });
+                  dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
                 }}
                 highlightNotable={preferences.highlightNotableAgents}
               />
@@ -723,8 +757,8 @@ function App() {
                 onAgentClick={handleAgentClick}
                 onBasinClick={(basin) => viewBasinHistory(basin.id)}
                 onDungeonClick={(dungeon) => {
-                  setSelectedDungeon(dungeon);
-                  setSelectedAgent(null);
+                  dispatch({ type: 'SET_SELECTED_DUNGEON', payload: dungeon });
+                  dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
                 }}
                 highlightNotable={preferences.highlightNotableAgents}
               />
@@ -743,8 +777,9 @@ function App() {
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl">Control Panel</h2>
               <button
-                className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs"
-                onClick={() => setShowSettings(true)}
+                id="settingsButton"
+                className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs cursor-pointer"
+                onClick={() => dispatch({ type: 'SET_SHOW_SETTINGS', payload: true })}
                 onMouseEnter={(e) => handleShowTooltip('Open settings', e)}
                 onMouseLeave={handleHideTooltip}
               >
@@ -790,7 +825,7 @@ function App() {
                   min="1"
                   max="20"
                   value={simulationSpeed}
-                  onChange={(e) => setSimulationSpeed(parseInt(e.target.value))}
+                  onChange={(e) => dispatch({ type: 'SET_SIMULATION_SPEED', payload: parseInt(e.target.value) })}
                   className="w-24"
                 />
                 <span className="ml-1 text-sm">{simulationSpeed}x</span>
@@ -804,13 +839,13 @@ function App() {
                   min="1"
                   max="100"
                   value={skipDays}
-                  onChange={(e) => setSkipDays(parseInt(e.target.value))}
+                  onChange={(e) => dispatch({ type: 'SET_SKIP_DAYS', payload: parseInt(e.target.value) })}
                   className="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
                 />
                 <span className="text-sm">days</span>
                 <button
                   className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm"
-                  onClick={() => setIsSkipping(true)}
+                  onClick={() => dispatch({ type: 'SET_IS_SKIPPING', payload: true })}
                   disabled={isSkipping || isSimulationRunning}
                 >
                   Skip
@@ -823,18 +858,20 @@ function App() {
               <h2 className="text-xl mb-2">Save/Load</h2>
               <div className="flex space-x-2">
                 <button
-                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
-                  onClick={() => setSaveModalOpen(true)}
+                  id="saveButton"
+                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded cursor-pointer"
+                  onClick={() => dispatch({ type: 'SET_SAVE_MODAL_OPEN', payload: true })}
                   onMouseEnter={(e) => handleShowTooltip('Save simulation (Ctrl+S)', e)}
                   onMouseLeave={handleHideTooltip}
                 >
                   Save
                 </button>
                 <button
-                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
+                  id="loadButton"
+                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded cursor-pointer"
                   onClick={() => {
-                    setSaveList(getSaveList());
-                    setLoadModalOpen(true);
+                    dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
+                    dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: true });
                   }}
                   onMouseEnter={(e) => handleShowTooltip('Load simulation (Ctrl+L)', e)}
                   onMouseLeave={handleHideTooltip}
@@ -842,8 +879,9 @@ function App() {
                   Load
                 </button>
                 <button
-                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded"
-                  onClick={handleExport}
+                  id="exportButton"
+                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded cursor-pointer"
+                  onClick={() => handleExport()}
                   onMouseEnter={(e) => handleShowTooltip('Export simulation to file', e)}
                   onMouseLeave={handleHideTooltip}
                 >
@@ -869,7 +907,7 @@ function App() {
                   value={historyFilter}
                   onChange={(e) => {
                     const value = e.target.value as 'all' | 'agent' | 'basin' | 'dungeon';
-                    setHistoryFilter(value);
+                    dispatch({ type: 'SET_HISTORY_FILTER', payload: value });
                     if (value === 'all') {
                       resetHistoryFilter();
                     }
@@ -886,7 +924,7 @@ function App() {
                     className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
                     value={selectedHistoryId || ''}
                     onChange={(e) => {
-                      setSelectedHistoryId(e.target.value);
+                      dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: e.target.value });
                       updateFilteredEvents(events);
                     }}
                   >
@@ -978,7 +1016,7 @@ function App() {
                   </div>
                   <button 
                     className="text-gray-400 hover:text-white"
-                    onClick={() => setSelectedAgent(null)}
+                    onClick={() => dispatch({ type: 'SET_SELECTED_AGENT', payload: null })}
                   >
                     ✕
                   </button>
@@ -1055,7 +1093,7 @@ function App() {
                   <div
                     key={`notable-${agent.id}`}
                     className="bg-gray-900 p-2 rounded mb-2 cursor-pointer hover:bg-gray-700"
-                    onClick={() => setSelectedAgent(agent)}
+                    onClick={() => dispatch({ type: 'SET_SELECTED_AGENT', payload: agent })}
                   >
                     <div className="flex items-center">
                       <div
@@ -1097,7 +1135,7 @@ function App() {
                   </div>
                   <button
                     className="text-gray-400 hover:text-white"
-                    onClick={() => setSelectedDungeon(null)}
+                    onClick={() => dispatch({ type: 'SET_SELECTED_DUNGEON', payload: null })}
                   >
                     ✕
                   </button>
@@ -1107,8 +1145,16 @@ function App() {
                   <p className="text-sm">
                     <span className="text-gray-400">Location:</span> ({selectedDungeon.location.x}, {selectedDungeon.location.y})
                     <button
+                      id="viewDungeonHistoryButton"
                       className="ml-2 text-blue-400 hover:underline text-xs"
-                      onClick={() => viewDungeonHistory(selectedDungeon.id)}
+                      onClick={() => {
+                        viewDungeonHistory(selectedDungeon.id);
+                        // Scroll to event log
+                        const eventLog = document.querySelector('.event-log');
+                        if (eventLog) {
+                          eventLog.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }}
                     >
                       View History
                     </button>
@@ -1166,7 +1212,7 @@ function App() {
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
               placeholder="Enter seed (optional)"
               value={mazeSeed}
-              onChange={(e) => setMazeSeed(e.target.value)}
+              onChange={(e) => dispatch({ type: 'SET_MAZE_SEED', payload: e.target.value })}
             />
           </div>
           <div>
@@ -1176,7 +1222,7 @@ function App() {
               id="mazeWidth" 
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
               value={mazeWidth}
-              onChange={(e) => setMazeWidth(parseInt(e.target.value))}
+              onChange={(e) => dispatch({ type: 'SET_MAZE_WIDTH', payload: parseInt(e.target.value) })}
               min="20"
               max="100"
             />
@@ -1188,7 +1234,7 @@ function App() {
               id="mazeHeight" 
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
               value={mazeHeight}
-              onChange={(e) => setMazeHeight(parseInt(e.target.value))}
+              onChange={(e) => dispatch({ type: 'SET_MAZE_HEIGHT', payload: parseInt(e.target.value) })}
               min="20"
               max="100"
             />
@@ -1200,7 +1246,7 @@ function App() {
               id="basinCount" 
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
               value={basinCount}
-              onChange={(e) => setBasinCount(parseInt(e.target.value))}
+              onChange={(e) => dispatch({ type: 'SET_BASIN_COUNT', payload: parseInt(e.target.value) })}
               min="1"
               max="10"
             />
@@ -1212,7 +1258,7 @@ function App() {
               id="populationPerBasin" 
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
               value={populationPerBasin}
-              onChange={(e) => setPopulationPerBasin(parseInt(e.target.value))}
+              onChange={(e) => dispatch({ type: 'SET_POPULATION_PER_BASIN', payload: parseInt(e.target.value) })}
               min="10"
               max="500"
             />
@@ -1224,7 +1270,7 @@ function App() {
               id="casualtyRate" 
               className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
               value={initialCasualtyRate}
-              onChange={(e) => setInitialCasualtyRate(parseInt(e.target.value))}
+              onChange={(e) => dispatch({ type: 'SET_INITIAL_CASUALTY_RATE', payload: parseInt(e.target.value) })}
               min="0"
               max="90"
             />
@@ -1247,8 +1293,8 @@ function App() {
       
       {/* Save Modal */}
       {saveModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-96">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-gray-800 rounded-lg p-6 w-96 relative">
             <h2 className="text-xl mb-4">Save Simulation</h2>
             <div className="mb-4">
               <label htmlFor="saveName" className="block mb-1">Save Name</label>
@@ -1257,20 +1303,28 @@ function App() {
                 id="saveName"
                 className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
                 value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
+                onChange={(e) => dispatch({ type: 'SET_SAVE_NAME', payload: e.target.value })}
                 placeholder="Enter save name"
               />
             </div>
             <div className="flex justify-end space-x-2">
               <button
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded"
-                onClick={() => setSaveModalOpen(false)}
+                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dispatch({ type: 'SET_SAVE_MODAL_OPEN', payload: false });
+                }}
               >
                 Cancel
               </button>
               <button
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
-                onClick={handleSave}
+                className={`bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded ${!saveName ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (saveName) handleSave();
+                }}
                 disabled={!saveName}
               >
                 Save
@@ -1282,8 +1336,8 @@ function App() {
       
       {/* Load Modal */}
       {loadModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-96">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-gray-800 rounded-lg p-6 w-96 relative">
             <h2 className="text-xl mb-4">Load Simulation</h2>
             
             {/* Saved Games */}
@@ -1297,7 +1351,7 @@ function App() {
                       className={`flex justify-between items-center p-2 rounded mb-1 ${
                         selectedSave === name ? 'bg-blue-900' : 'bg-gray-900'
                       }`}
-                      onClick={() => setSelectedSave(name)}
+                      onClick={() => dispatch({ type: 'SET_SELECTED_SAVE', payload: name })}
                     >
                       <span>{name}</span>
                       <button
@@ -1322,28 +1376,40 @@ function App() {
                 type="file"
                 accept=".json"
                 className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                onChange={(e) => dispatch({ type: 'SET_IMPORT_FILE', payload: e.target.files?.[0] || null })}
               />
             </div>
             
             <div className="flex justify-end space-x-2">
               <button
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded"
-                onClick={() => setLoadModalOpen(false)}
+                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: false });
+                }}
               >
                 Cancel
               </button>
               {importFile ? (
                 <button
-                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded"
-                  onClick={handleImport}
+                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleImport();
+                  }}
                 >
                   Import
                 </button>
               ) : (
                 <button
-                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
-                  onClick={handleLoad}
+                  className={`bg-green-600 hover:bg-green-700 px-4 py-2 rounded ${!selectedSave ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (selectedSave) handleLoad();
+                  }}
                   disabled={!selectedSave}
                 >
                   Load
@@ -1356,20 +1422,30 @@ function App() {
       
       {/* Confirmation Dialog */}
       {showConfirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-96">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-gray-800 rounded-lg p-6 w-96 relative">
             <h2 className="text-xl mb-4">Confirm Action</h2>
             <p className="mb-4">{confirmationMessage}</p>
             <div className="flex justify-end space-x-2">
               <button
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded"
-                onClick={() => setShowConfirmation(false)}
+                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dispatch({ type: 'SET_SHOW_CONFIRMATION', payload: false });
+                }}
               >
                 Cancel
               </button>
               <button
-                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded"
-                onClick={() => confirmationAction()}
+                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (confirmationAction) {
+                    confirmationAction();
+                  }
+                }}
               >
                 Confirm
               </button>
@@ -1381,7 +1457,7 @@ function App() {
       {/* Tooltip */}
       {showTooltip && (
         <div
-          className="fixed bg-gray-800 text-white px-3 py-1 rounded shadow-lg text-sm z-50"
+          className="fixed bg-gray-800 text-white px-3 py-1 rounded shadow-lg text-sm z-[90]"
           style={{
             left: `${tooltipPosition.x}px`,
             top: `${tooltipPosition.y}px`,
@@ -1394,13 +1470,17 @@ function App() {
       
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-[500px]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-gray-800 rounded-lg p-6 w-[500px] relative">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl">Settings</h2>
               <button
-                className="text-gray-400 hover:text-white"
-                onClick={() => setShowSettings(false)}
+                className="text-gray-400 hover:text-white cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dispatch({ type: 'SET_SHOW_SETTINGS', payload: false });
+                }}
               >
                 ✕
               </button>
@@ -1416,7 +1496,7 @@ function App() {
                       id="darkMode"
                       className="sr-only"
                       checked={preferences.darkMode}
-                      onChange={(e) => setPreferences({...preferences, darkMode: e.target.checked})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, darkMode: e.target.checked } })}
                     />
                     <div className={`block w-10 h-6 rounded-full ${preferences.darkMode ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                     <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.darkMode ? 'transform translate-x-4' : ''}`}></div>
@@ -1434,7 +1514,7 @@ function App() {
                       id="showEventNotifications"
                       className="sr-only"
                       checked={preferences.showEventNotifications}
-                      onChange={(e) => setPreferences({...preferences, showEventNotifications: e.target.checked})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, showEventNotifications: e.target.checked } })}
                     />
                     <div className={`block w-10 h-6 rounded-full ${preferences.showEventNotifications ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                     <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.showEventNotifications ? 'transform translate-x-4' : ''}`}></div>
@@ -1451,7 +1531,7 @@ function App() {
                       id="highlightNotableAgents"
                       className="sr-only"
                       checked={preferences.highlightNotableAgents}
-                      onChange={(e) => setPreferences({...preferences, highlightNotableAgents: e.target.checked})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, highlightNotableAgents: e.target.checked } })}
                     />
                     <div className={`block w-10 h-6 rounded-full ${preferences.highlightNotableAgents ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                     <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.highlightNotableAgents ? 'transform translate-x-4' : ''}`}></div>
@@ -1468,7 +1548,7 @@ function App() {
                       id="soundEffects"
                       className="sr-only"
                       checked={preferences.soundEffects}
-                      onChange={(e) => setPreferences({...preferences, soundEffects: e.target.checked})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, soundEffects: e.target.checked } })}
                     />
                     <div className={`block w-10 h-6 rounded-full ${preferences.soundEffects ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                     <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.soundEffects ? 'transform translate-x-4' : ''}`}></div>
@@ -1486,7 +1566,7 @@ function App() {
                       id="compactUI"
                       className="sr-only"
                       checked={preferences.compactUI}
-                      onChange={(e) => setPreferences({...preferences, compactUI: e.target.checked})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, compactUI: e.target.checked } })}
                     />
                     <div className={`block w-10 h-6 rounded-full ${preferences.compactUI ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                     <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.compactUI ? 'transform translate-x-4' : ''}`}></div>
@@ -1503,7 +1583,7 @@ function App() {
                       id="useSVGMode"
                       className="sr-only"
                       checked={preferences.useSVGMode}
-                      onChange={(e) => setPreferences({...preferences, useSVGMode: e.target.checked})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, useSVGMode: e.target.checked } })}
                     />
                     <div className={`block w-10 h-6 rounded-full ${preferences.useSVGMode ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                     <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.useSVGMode ? 'transform translate-x-4' : ''}`}></div>
@@ -1521,7 +1601,7 @@ function App() {
                         id="autoSaveEnabled"
                         className="sr-only"
                         checked={preferences.autoSaveEnabled}
-                        onChange={(e) => setPreferences({...preferences, autoSaveEnabled: e.target.checked})}
+                        onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, autoSaveEnabled: e.target.checked } })}
                       />
                       <div className={`block w-10 h-6 rounded-full ${preferences.autoSaveEnabled ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
                       <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.autoSaveEnabled ? 'transform translate-x-4' : ''}`}></div>
@@ -1537,7 +1617,7 @@ function App() {
                       id="autoSaveInterval"
                       className="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1"
                       value={preferences.autoSaveInterval}
-                      onChange={(e) => setPreferences({...preferences, autoSaveInterval: Math.max(1, parseInt(e.target.value))})}
+                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, autoSaveInterval: Math.max(1, parseInt(e.target.value)) } })}
                       min="1"
                       max="60"
                     />
@@ -1549,8 +1629,12 @@ function App() {
             
             <div className="mt-6 flex justify-end">
               <button
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
-                onClick={() => setShowSettings(false)}
+                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dispatch({ type: 'SET_SHOW_SETTINGS', payload: false });
+                }}
               >
                 Save Settings
               </button>
@@ -1561,13 +1645,17 @@ function App() {
       
       {/* Help Modal */}
       {showHelp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-gray-800 rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto relative">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl">Help & Keyboard Shortcuts</h2>
               <button
-                className="text-gray-400 hover:text-white"
-                onClick={() => setShowHelp(false)}
+                className="text-gray-400 hover:text-white cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dispatch({ type: 'SET_SHOW_HELP', payload: false });
+                }}
               >
                 ✕
               </button>
