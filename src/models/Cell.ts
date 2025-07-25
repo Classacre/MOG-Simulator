@@ -1,15 +1,16 @@
-import type { CellType, Position, Resources, IAgent } from './types';
+import type { CellType, Position, Resources, IAgent, ICell } from './types';
 
 /**
  * Cell model representing a single cell in the maze grid
  */
-export class Cell {
+export class Cell implements ICell {
   id: string;
   type: CellType;
   position: Position;
   resources: Resources;
   occupants: IAgent[];
   discovered: boolean;
+  lastVisitedDay?: number;
   basinId?: string;
   dungeonId?: string;
 
@@ -23,9 +24,10 @@ export class Cell {
     this.id = `${x}-${y}`;
     this.position = { x, y };
     this.type = type;
-    this.resources = { food: 0, water: 0 };
+    this.resources = { food: 0, water: 0, health: 0, energy: 0 };
     this.occupants = [];
     this.discovered = false;
+    this.lastVisitedDay = undefined;
   }
 
   /**
@@ -39,26 +41,41 @@ export class Cell {
    * Add resources to the cell
    * @param food Amount of food to add
    * @param water Amount of water to add
+   * @param health Amount of health to add
+   * @param energy Amount of energy to add
    */
-  addResources(food: number, water: number): void {
+  addResources(food: number, water: number, health: number = 0, energy: number = 0): void {
     this.resources.food += food;
     this.resources.water += water;
+    this.resources.health += health;
+    this.resources.energy += energy;
   }
 
   /**
    * Consume resources from the cell
    * @param food Amount of food to consume
    * @param water Amount of water to consume
+   * @param health Amount of health to consume
+   * @param energy Amount of energy to consume
    * @returns Actually consumed resources (may be less than requested if not enough available)
    */
-  consumeResources(food: number, water: number): Resources {
+  consumeResources(food: number, water: number, health: number = 0, energy: number = 0): Resources {
     const consumedFood = Math.min(this.resources.food, food);
     const consumedWater = Math.min(this.resources.water, water);
+    const consumedHealth = Math.min(this.resources.health, health);
+    const consumedEnergy = Math.min(this.resources.energy, energy);
     
     this.resources.food -= consumedFood;
     this.resources.water -= consumedWater;
+    this.resources.health -= consumedHealth;
+    this.resources.energy -= consumedEnergy;
     
-    return { food: consumedFood, water: consumedWater };
+    return {
+      food: consumedFood,
+      water: consumedWater,
+      health: consumedHealth,
+      energy: consumedEnergy
+    };
   }
 
   /**

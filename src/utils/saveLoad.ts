@@ -27,7 +27,9 @@ interface SerializedCell {
   id: string;
   type: string;
   position: { x: number; y: number };
-  resources: { food: number; water: number };
+  resources: { food: number; water: number; health: number; energy: number; }; // Added health and energy
+  discovered: boolean; // Added discovered
+  lastVisitedDay?: number; // Added lastVisitedDay
   basinId?: string;
   dungeonId?: string;
 }
@@ -36,7 +38,10 @@ interface SerializedBasin {
   id: string;
   name: string;
   location: { x: number; y: number };
+  radius: number; // Added radius
+  resources: { food: number; water: number; health: number; energy: number; }; // Added health and energy
   agentIds: string[];
+  cells: string[]; // Store cell IDs to re-associate
 }
 
 interface SerializedDungeon {
@@ -61,6 +66,7 @@ interface SerializedAgent {
     thirst: number;
     energy: number;
     morale: number;
+    resourcefulness: number; // Added resourcefulness
   };
   birthright: Birthright;
   augment: Augment | null;
@@ -130,8 +136,8 @@ export function loadSimulation(saveData: SaveData): {
   agents: Agent[];
   events: string[];
 } {
-  const { seed, currentDay, mazeWidth, mazeHeight, grid: serializedGrid, 
-    basins: serializedBasins, dungeons: serializedDungeons, 
+  const { seed, currentDay, mazeWidth, mazeHeight, grid: serializedGrid,
+    basins: serializedBasins, dungeons: serializedDungeons,
     agents: serializedAgents, events } = saveData;
   
   // Reconstruct grid, basins, dungeons, and agents
@@ -141,7 +147,7 @@ export function loadSimulation(saveData: SaveData): {
   const agents = deserializeAgents(serializedAgents);
   
   // Reconnect references
-  reconnectReferences(grid, basins, dungeons, agents);
+  reconnectReferences(grid, basins, dungeons, agents, serializedBasins); // Pass serializedBasins
   
   return {
     seed,
@@ -290,6 +296,8 @@ function serializeGrid(grid: Cell[][]): SerializedCell[][] {
       type: cell.type,
       position: { ...cell.position },
       resources: { ...cell.resources },
+      discovered: cell.discovered,
+      lastVisitedDay: cell.lastVisitedDay,
       basinId: cell.basinId,
       dungeonId: cell.dungeonId
     }))
@@ -301,7 +309,10 @@ function serializeBasins(basins: Basin[]): SerializedBasin[] {
     id: basin.id,
     name: basin.name,
     location: { ...basin.location },
-    agentIds: basin.population.map((agent: IAgent) => agent.id)
+    radius: basin.radius,
+    resources: { ...basin.resources },
+    agentIds: basin.population.map((agent: IAgent) => agent.id),
+    cells: basin.cells.map(cell => cell.id) // Store cell IDs
   }));
 }
 
@@ -352,6 +363,8 @@ function deserializeGrid(serializedGrid: SerializedCell[][]): Cell[][] {
       );
       
       newCell.resources = { ...cell.resources };
+      newCell.discovered = cell.discovered;
+      newCell.lastVisitedDay = cell.lastVisitedDay;
       newCell.basinId = cell.basinId;
       newCell.dungeonId = cell.dungeonId;
       
@@ -366,9 +379,9 @@ function deserializeBasins(serializedBasins: SerializedBasin[]): Basin[] {
       basin.id,
       basin.name,
       basin.location,
-      5 // Default radius
+      basin.radius
     );
-    
+    newBasin.resources = { ...basin.resources };
     return newBasin;
   });
 }
@@ -401,7 +414,7 @@ function deserializeAgents(serializedAgents: SerializedAgent[]): Agent[] {
     );
     
     newAgent.status = agent.status as 'alive' | 'injured' | 'dead';
-    newAgent.stats = { ...agent.stats };
+    newAgent.stats = { ...agent.stats, resourcefulness: agent.stats.resourcefulness }; // Explicitly copy resourcefulness
     newAgent.augment = agent.augment ? { ...agent.augment } : null;
     newAgent.knownMap = new Set(agent.knownMap);
     newAgent.relationships = { ...agent.relationships };
@@ -424,7 +437,8 @@ function reconnectReferences(
   grid: Cell[][],
   basins: Basin[],
   dungeons: Dungeon[],
-  agents: Agent[]
+  agents: Agent[],
+  serializedBasins: SerializedBasin[] // Added serializedBasins
 ): void {
   // Connect cells to dungeons and basins
   grid.forEach(row => {
@@ -439,7 +453,21 @@ function reconnectReferences(
       if (cell.basinId) {
         const basin = basins.find(b => b.id === cell.basinId);
         if (basin) {
-          basin.addCell(cell);
+          // Re-add cells to basin.cells based on stored IDs
+          if (basin.cells.length === 0 && basin.cells.length !== basin.cells.length) { // Only if not already populated
+            const cellObjects = serializedBasins.find(b => b.id === basin.id)?.cells.map(cellId => {
+                let foundCell: Cell | undefined;
+                grid.forEach(row => {
+                    row.forEach(gridCell => {
+                        if (gridCell.id === cellId) {
+                            foundCell = gridCell;
+                        }
+                    });
+                });
+                return foundCell;
+            }).filter(Boolean) as Cell[];
+            cellObjects.forEach(c => basin.addCell(c));
+          }
         }
       }
     });

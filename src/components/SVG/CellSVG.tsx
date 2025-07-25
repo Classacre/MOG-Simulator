@@ -6,21 +6,26 @@ interface CellSVGProps {
   size: number;
   onClick?: () => void;
   isSelectedDungeon?: boolean;
+  isSelectedCell?: boolean; // New prop for selected cell
 }
 
 const CellSVG: React.FC<CellSVGProps> = ({
   cell,
   size,
   onClick,
-  isSelectedDungeon = false
+  isSelectedDungeon = false,
+  isSelectedCell = false // Default to false
 }) => {
-  // Determine cell color based on type
+  // Determine cell color based on type and discovered status
   const getCellColor = () => {
+    if (!cell.discovered) {
+      return '#1a202c'; // Darker color for undiscovered cells (e.g., almost black)
+    }
     switch (cell.type) {
       case 'wall':
         return '#1f2937'; // bg-gray-800
       case 'path':
-        return '#4b5563'; // bg-gray-600
+        return '#ffffff'; // White for discovered path cells
       case 'basin':
         return '#065f46'; // bg-emerald-700
       case 'dungeon':
@@ -146,11 +151,23 @@ const CellSVG: React.FC<CellSVGProps> = ({
         position: 'absolute',
         left: 0,
         top: 0,
-        cursor: cell.type === 'dungeon' ? 'pointer' : 'default',
-        zIndex: isSelectedDungeon ? 10 : 1
+        cursor: 'pointer', // Always make cells clickable
+        zIndex: isSelectedDungeon || isSelectedCell ? 10 : 1
       }}
       onClick={onClick}
     >
+      {/* Selection border */}
+      {isSelectedCell && (
+        <rect
+          x="0"
+          y="0"
+          width="8"
+          height="8"
+          fill="none"
+          stroke="#facc15" // Yellow border for selection
+          strokeWidth="0.5"
+        />
+      )}
       {/* Base cell pattern */}
       {renderCellPattern()}
       

@@ -8,6 +8,7 @@ interface CellProps {
   y: number;
   onClick?: () => void;
   isSelectedDungeon?: boolean;
+  isSelectedCell?: boolean; // Added isSelectedCell
 }
 
 const CellComponent: React.FC<CellProps> = ({
@@ -16,7 +17,8 @@ const CellComponent: React.FC<CellProps> = ({
   x,
   y,
   onClick,
-  isSelectedDungeon = false
+  isSelectedDungeon = false,
+  isSelectedCell = false // Destructure isSelectedCell
 }) => {
   // Determine cell background color based on type
   const getCellBackgroundColor = () => {
@@ -164,13 +166,11 @@ const CellComponent: React.FC<CellProps> = ({
         backgroundColor: getCellBackgroundColor(),
         border: '0.5px solid #111827', // border-gray-900
         imageRendering: 'pixelated',
-        ...(isSelectedDungeon ? {
+        ...(isSelectedDungeon || isSelectedCell ? { // Apply highlight if dungeon or cell is selected
           boxShadow: '0 0 0 2px #FBBF24', // ring-2 ring-yellow-400
           zIndex: 10
         } : {}),
-        ...(cell.type === 'dungeon' ? {
-          cursor: 'pointer'
-        } : {})
+        cursor: 'pointer' // Always make cells clickable
       }}
       onClick={onClick}
     >

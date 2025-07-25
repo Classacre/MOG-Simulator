@@ -1,24 +1,21 @@
+import type { Position, AgentStatus, AgentStats, SimplifiedCell, SimplifiedBasin } from '../models/types';
+
 // Worker Manager for handling communication with the simulation worker
 
 // Define types
-type WorkerMessageType = 
+type WorkerMessageType =
   | 'CALCULATE_PATHS'
   | 'BATCH_AGENT_UPDATE';
 
 // Simplified agent type for worker processing
-interface SimplifiedAgent {
+export interface SimplifiedAgent {
   id: string;
   name: string;
-  status: 'alive' | 'injured' | 'dead';
-  stats: {
-    health: number;
-    hunger: number;
-    thirst: number;
-    energy: number;
-    morale: number;
-  };
-  location: { x: number; y: number };
+  status: AgentStatus;
+  stats: AgentStats;
+  location: Position;
   daysSurvived: number;
+  knownMap: Set<string>;
 }
 
 interface PathCalculationRequest {
@@ -38,13 +35,17 @@ interface PathCalculationResponse {
   id: string;
 }
 
-interface BatchAgentUpdateRequest {
+export interface BatchAgentUpdateRequest {
   agents: SimplifiedAgent[];
+  cells: SimplifiedCell[][];
+  basins: SimplifiedBasin[];
   day: number;
 }
 
-interface BatchAgentUpdateResponse {
+export interface BatchAgentUpdateResponse {
   updatedAgents: SimplifiedAgent[];
+  updatedCells: SimplifiedCell[][];
+  updatedBasins: SimplifiedBasin[];
   events: string[];
   id: string;
 }
@@ -59,6 +60,8 @@ interface WorkerRequest {
 interface WorkerResponse {
   path?: { x: number; y: number }[];
   updatedAgents?: SimplifiedAgent[];
+  updatedCells?: SimplifiedCell[][];
+  updatedBasins?: SimplifiedBasin[];
   events?: string[];
   id: string;
 }
@@ -131,10 +134,10 @@ function sendMessage<T>(
 
 // Calculate path using worker
 export function calculatePath(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
+  start: Position,
+  end: Position,
   grid: { x: number; y: number; isWall: boolean }[]
-): Promise<{ x: number; y: number }[]> {
+): Promise<Position[]> {
   return new Promise((resolve, reject) => {
     if (!worker) {
       initWorker();
@@ -157,8 +160,15 @@ export function calculatePath(
 // Batch update agents using worker
 export function batchUpdateAgents(
   agents: SimplifiedAgent[],
+  cells: SimplifiedCell[][],
+  basins: SimplifiedBasin[],
   day: number
-): Promise<{ updatedAgents: SimplifiedAgent[]; events: string[] }> {
+): Promise<{
+  updatedAgents: SimplifiedAgent[];
+  updatedCells: SimplifiedCell[][];
+  updatedBasins: SimplifiedBasin[];
+  events: string[];
+}> {
   return new Promise((resolve, reject) => {
     if (!worker) {
       initWorker();
@@ -166,11 +176,15 @@ export function batchUpdateAgents(
     
     sendMessage<BatchAgentUpdateResponse>('BATCH_AGENT_UPDATE', {
       agents,
+      cells,
+      basins,
       day
     })
       .then((response) => {
         resolve({
           updatedAgents: response.updatedAgents || [],
+          updatedCells: response.updatedCells || [],
+          updatedBasins: response.updatedBasins || [],
           events: response.events || []
         });
       })
@@ -182,16 +196,11 @@ export function batchUpdateAgents(
 export function simplifyAgent(agent: {
   id: string;
   name: string;
-  status: 'alive' | 'injured' | 'dead';
-  stats: {
-    health: number;
-    hunger: number;
-    thirst: number;
-    energy: number;
-    morale: number;
-  };
-  location: { x: number; y: number };
+  status: AgentStatus;
+  stats: AgentStats;
+  location: Position;
   daysSurvived: number;
+  knownMap: Set<string>;
 }): SimplifiedAgent {
   return {
     id: agent.id,
@@ -199,26 +208,23 @@ export function simplifyAgent(agent: {
     status: agent.status,
     stats: { ...agent.stats },
     location: { ...agent.location },
-    daysSurvived: agent.daysSurvived
+    daysSurvived: agent.daysSurvived,
+    knownMap: new Set(agent.knownMap)
   };
 }
 
 // Apply updates from worker to agent
 export function applyAgentUpdates(
   agent: {
-    status: 'alive' | 'injured' | 'dead';
-    stats: {
-      health: number;
-      hunger: number;
-      thirst: number;
-      energy: number;
-      morale: number;
-    };
+    status: AgentStatus;
+    stats: AgentStats;
     daysSurvived: number;
+    knownMap: Set<string>;
   },
   updatedAgent: SimplifiedAgent
 ): void {
   agent.status = updatedAgent.status;
   agent.stats = { ...updatedAgent.stats };
   agent.daysSurvived = updatedAgent.daysSurvived;
+  agent.knownMap = new Set(updatedAgent.knownMap);
 }

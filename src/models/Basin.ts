@@ -44,7 +44,7 @@ export class Basin {
     this.location = location;
     this.radius = radius;
     this.population = [];
-    this.resources = { food: 0, water: 0 };
+    this.resources = { food: 0, water: 0, health: 0, energy: 0 };
     this.structures = [];
     this.history = [];
     this.cells = [];
@@ -83,26 +83,36 @@ export class Basin {
    * Add resources to the basin
    * @param food Amount of food to add
    * @param water Amount of water to add
+   * @param health Amount of health to add
+   * @param energy Amount of energy to add
    */
-  addResources(food: number, water: number): void {
+  addResources(food: number, water: number, health: number = 0, energy: number = 0): void {
     this.resources.food += food;
     this.resources.water += water;
+    this.resources.health += health;
+    this.resources.energy += energy;
   }
 
   /**
    * Consume resources from the basin
    * @param food Amount of food to consume
    * @param water Amount of water to consume
+   * @param health Amount of health to consume
+   * @param energy Amount of energy to consume
    * @returns Actually consumed resources (may be less than requested if not enough available)
    */
-  consumeResources(food: number, water: number): Resources {
+  consumeResources(food: number, water: number, health: number = 0, energy: number = 0): Resources {
     const consumedFood = Math.min(this.resources.food, food);
     const consumedWater = Math.min(this.resources.water, water);
+    const consumedHealth = Math.min(this.resources.health, health);
+    const consumedEnergy = Math.min(this.resources.energy, energy);
     
     this.resources.food -= consumedFood;
     this.resources.water -= consumedWater;
+    this.resources.health -= consumedHealth;
+    this.resources.energy -= consumedEnergy;
     
-    return { food: consumedFood, water: consumedWater };
+    return { food: consumedFood, water: consumedWater, health: consumedHealth, energy: consumedEnergy };
   }
 
   /**
@@ -157,18 +167,24 @@ export class Basin {
     // Calculate total resources to distribute
     const totalFood = 50 + Math.floor(Math.random() * 50); // 50-99
     const totalWater = 70 + Math.floor(Math.random() * 30); // 70-99
+    const totalHealth = 30 + Math.floor(Math.random() * 20); // 30-49
+    const totalEnergy = 40 + Math.floor(Math.random() * 20); // 40-59
     
     // Calculate per-cell resources
     const foodPerCell = Math.floor(totalFood / this.cells.length);
     const waterPerCell = Math.floor(totalWater / this.cells.length);
+    const healthPerCell = Math.floor(totalHealth / this.cells.length);
+    const energyPerCell = Math.floor(totalEnergy / this.cells.length);
     
     // Distribute to cells
     for (const cell of this.cells) {
-      cell.addResources(foodPerCell, waterPerCell);
+      cell.addResources(foodPerCell, waterPerCell, healthPerCell, energyPerCell);
     }
     
     // Add remaining resources to basin storage
     this.resources.food += totalFood - (foodPerCell * this.cells.length);
     this.resources.water += totalWater - (waterPerCell * this.cells.length);
+    this.resources.health += totalHealth - (healthPerCell * this.cells.length);
+    this.resources.energy += totalEnergy - (energyPerCell * this.cells.length);
   }
 }

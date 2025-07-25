@@ -48,6 +48,7 @@ export interface AppState {
   agents: Agent[];
   selectedAgent: Agent | null;
   selectedDungeon: Dungeon | null;
+  selectedCell: Cell | null; // Added selectedCell
   notableAgents: Agent[];
   events: string[];
   dungeonEvents: DungeonEvent[];
@@ -90,6 +91,7 @@ export type AppAction =
   | { type: 'SET_AGENTS'; payload: Agent[] }
   | { type: 'SET_SELECTED_AGENT'; payload: Agent | null }
   | { type: 'SET_SELECTED_DUNGEON'; payload: Dungeon | null }
+  | { type: 'SET_SELECTED_CELL'; payload: Cell | null } // Added selectedCell action
   | { type: 'SET_NOTABLE_AGENTS'; payload: Agent[] }
   | { type: 'SET_EVENTS'; payload: string[] }
   | { type: 'SET_DUNGEON_EVENTS'; payload: DungeonEvent[] };
@@ -166,6 +168,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, selectedAgent: action.payload };
     case 'SET_SELECTED_DUNGEON':
       return { ...state, selectedDungeon: action.payload };
+    case 'SET_SELECTED_CELL': // Added SET_SELECTED_CELL case
+      return { ...state, selectedCell: action.payload };
     case 'SET_NOTABLE_AGENTS':
       return { ...state, notableAgents: action.payload };
     case 'SET_EVENTS':

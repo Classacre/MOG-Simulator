@@ -1,3 +1,4 @@
+import seedrandom from 'seedrandom';
 import { Cell } from '../models/Cell';
 import { Basin } from '../models/Basin';
 import { Dungeon } from '../models/Dungeon';
@@ -134,6 +135,93 @@ function isInBounds(x: number, y: number, width: number, height: number): boolea
 }
 
 /**
+ * Initialize a grid with all walls
+ * @param width Width of the grid
+ * @param height Height of the grid
+ * @returns 2D array of cells
+ */
+function initializeGrid(width: number, height: number): Cell[][] {
+  const grid: Cell[][] = [];
+  for (let y = 0; y < height; y++) {
+    const row: Cell[] = [];
+    for (let x = 0; x < width; x++) {
+      row.push(new Cell(x, y, 'wall'));
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+/**
+ * Add neighboring walls to the wall list
+ * @param x X coordinate of the cell
+ * @param y Y coordinate of the cell
+ * @param grid The maze grid
+ * @param walls The list of walls
+ * @param width Grid width
+ * @param height Grid height
+ */
+function addWallsToList(
+  x: number,
+  y: number,
+  grid: Cell[][],
+  walls: Position[],
+  width: number,
+  height: number
+): void {
+  const directions = [
+    { dx: -1, dy: 0 }, // Left
+    { dx: 1, dy: 0 },  // Right
+    { dx: 0, dy: -1 }, // Up
+    { dx: 0, dy: 1 }   // Down
+  ];
+
+  for (const dir of directions) {
+    const nx = x + dir.dx;
+    const ny = y + dir.dy;
+
+    if (isInBounds(nx, ny, width, height) && grid[ny][nx].type === 'wall') {
+      // Check if the wall is not already in the list
+      if (!walls.some(wall => wall.x === nx && wall.y === ny)) {
+        walls.push({ x: nx, y: ny });
+      }
+    }
+  }
+}
+
+/**
+ * Check if a wall is valid to remove
+ * @param x X coordinate of the wall
+ * @param y Y coordinate of the wall
+ * @param grid The maze grid
+ * @param width Grid width
+ * @param height Grid height
+ * @returns Whether the wall is valid to remove
+ */
+function isValidWallToRemove(x: number, y: number, grid: Cell[][], width: number, height: number): boolean {
+  const directions = [
+    { dx: -1, dy: 0 }, // Left
+    { dx: 1, dy: 0 },  // Right
+    { dx: 0, dy: -1 }, // Up
+    { dx: 0, dy: 1 }   // Down
+  ];
+
+  let pathCount = 0;
+
+  for (const dir of directions) {
+    const nx = x + dir.dx;
+    const ny = y + dir.dy;
+
+    if (isInBounds(nx, ny, width, height) && grid[ny][nx].type === 'path') {
+      pathCount++;
+    }
+  }
+
+  // If exactly one of the cells that the wall divides is a path
+  return pathCount === 1;
+}
+
+/**
  * Get neighboring positions
  * @param x X coordinate
  * @param y Y coordinate
@@ -172,77 +260,45 @@ function getNeighbors(x: number, y: number, width: number, height: number): Posi
  */
 export function generateMaze(width: number, height: number, seed?: string): Cell[][] {
   // Initialize random number generator with seed
-  let random: () => number;
-  if (seed) {
-    // Use a simple seed-based random function
-    let seedNum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    random = () => {
-      const x = Math.sin(seedNum++) * 10000;
-      return x - Math.floor(x);
-    };
-  } else {
-    random = Math.random;
-  }
-  
+  const random = seed ? seedrandom(seed) : seedrandom();
+
   // Initialize grid with all walls
-  const grid: Cell[][] = [];
-  for (let y = 0; y < height; y++) {
-    const row: Cell[] = [];
-    for (let x = 0; x < width; x++) {
-      row.push(new Cell(x, y, 'wall'));
-    }
-    grid.push(row);
-  }
-  
+  const grid: Cell[][] = initializeGrid(width, height);
+
   // Start with a random cell
   const startX = Math.floor(random() * Math.floor((width - 1) / 2)) * 2 + 1;
   const startY = Math.floor(random() * Math.floor((height - 1) / 2)) * 2 + 1;
   grid[startY][startX].type = 'path';
-  
+
   // Add walls of the starting cell to the wall list
   const walls: Position[] = [];
-  const neighbors = getNeighbors(startX, startY, width, height);
-  for (const neighbor of neighbors) {
-    walls.push(neighbor);
-  }
-  
+  addWallsToList(startX, startY, grid, walls, width, height);
+
   // While there are walls in the list
   while (walls.length > 0) {
     // Pick a random wall from the list
     const wallIndex = Math.floor(random() * walls.length);
     const wall = walls[wallIndex];
-    
+
     // Remove the wall from the list
     walls.splice(wallIndex, 1);
-    
+
     const x = wall.x;
     const y = wall.y;
-    
-    // Count path neighbors
-    let pathNeighbors = 0;
-    const cellNeighbors = getNeighbors(x, y, width, height);
-    for (const neighbor of cellNeighbors) {
-      if (grid[neighbor.y][neighbor.x].type === 'path') {
-        pathNeighbors++;
-      }
-    }
-    
-    // If only one neighbor is a path, make this wall a path
-    if (pathNeighbors === 1) {
+
+    // If only one of the two cells that the wall divides is a path
+    if (isValidWallToRemove(x, y, grid, width, height)) {
+      // Make the wall a path
       grid[y][x].type = 'path';
-      
-      // Add neighboring walls to the wall list
-      for (const neighbor of cellNeighbors) {
-        if (grid[neighbor.y][neighbor.x].type === 'wall') {
-          walls.push(neighbor);
-        }
-      }
+
+      // Add the neighboring walls to the wall list
+      addWallsToList(x, y, grid, walls, width, height);
     }
   }
-  
+
   // Ensure connectivity
   ensureConnectivity(grid);
-  
+
   return grid;
 }
 
@@ -382,7 +438,7 @@ function createPathBetween(from: Position, to: Position, grid: Cell[][]): void {
 export function placeBasins(
   grid: Cell[][],
   basinCount: number,
-  random: () => number = Math.random
+  random: seedrandom.PRNG
 ): Basin[] {
   const height = grid.length;
   const width = grid[0].length;
@@ -432,10 +488,10 @@ export function placeBasins(
         const radius = 2 + Math.floor(random() * 2); // Basin radius 2-3
         
         const basin = new Basin(basinId, basinName, cell, radius);
-        
-        // Add cells to the basin
+
+        // Expand the basin
         expandBasin(cell.x, cell.y, grid, basin, radius);
-        
+
         basins.push(basin);
         placed = true;
       }
@@ -478,7 +534,7 @@ function expandBasin(
         
         // Convert to basin if within radius
         if (distance <= radius) {
-          basin.addCell(grid[ny][nx]);
+          grid[ny][nx].convertToBasin(basin.id);
         }
       }
     }
@@ -536,7 +592,7 @@ export function placeDungeons(
   grid: Cell[][],
   dungeonCount: number,
   basins: Basin[],
-  random: () => number = Math.random
+  random: seedrandom.PRNG
 ): Dungeon[] {
   const height = grid.length;
   const width = grid[0].length;
@@ -601,13 +657,13 @@ export function placeDungeons(
         const augment = generateAugment();
         
         const dungeon = new Dungeon(dungeonId, dungeonName, cell, difficulty, augment);
-        
-        // Set the cell for this dungeon
-        dungeon.setCell(grid[cell.y][cell.x]);
-        
+
+        // Convert cell to dungeon type
+        grid[cell.y][cell.x].convertToDungeon(dungeon.id);
+
         // Ensure dungeon has exactly one entrance
         ensureDungeonEntrance(cell.x, cell.y, grid);
-        
+
         dungeons.push(dungeon);
         placed = true;
       }
@@ -683,53 +739,55 @@ function ensureDungeonEntrance(x: number, y: number, grid: Cell[][]): void {
 export function distributeResources(
   grid: Cell[][],
   basins: Basin[],
-  random: () => number = Math.random
+  random: seedrandom.PRNG
 ): void {
   const height = grid.length;
   const width = grid[0].length;
-  
-  // Distribute resources in basins
+
+  // Assign high resources to basin cells
   for (const basin of basins) {
-    basin.distributeResources();
+    for (const cell of basin.cells) {
+      cell.addResources(50 + Math.floor(random() * 50), 70 + Math.floor(random() * 30));
+    }
   }
-  
+
   // Create resource gradients from basins
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const cell = grid[y][x];
-      
+
       // Skip walls and basin cells (already have resources)
       if (cell.type === 'wall' || cell.type === 'basin') {
         continue;
       }
-      
+
       // Calculate distance to nearest basin
       let minDistance = Infinity;
       for (const basin of basins) {
         const distance = Math.abs(x - basin.location.x) + Math.abs(y - basin.location.y);
         minDistance = Math.min(minDistance, distance);
       }
-      
+
       // Add resources based on distance (closer = more)
       const distanceFactor = Math.max(0, 1 - (minDistance / 20)); // 0 to 1
       const foodAmount = Math.floor(random() * 10 * distanceFactor);
       const waterAmount = Math.floor(random() * 15 * distanceFactor);
-      
+
       cell.addResources(foodAmount, waterAmount);
     }
   }
-  
+
   // Add random resource hotspots
   const hotspotCount = Math.floor(width * height / 100); // 1 hotspot per 100 cells
-  
+
   for (let i = 0; i < hotspotCount; i++) {
     const x = Math.floor(random() * width);
     const y = Math.floor(random() * height);
-    
+
     if (grid[y][x].type !== 'wall') {
       const foodAmount = 10 + Math.floor(random() * 20); // 10-29
       const waterAmount = 15 + Math.floor(random() * 25); // 15-39
-      
+
       grid[y][x].addResources(foodAmount, waterAmount);
     }
   }
@@ -756,17 +814,7 @@ export function generateCompleteMaze(
   dungeons: Dungeon[]
 } {
   // Initialize random number generator with seed
-  let random: () => number;
-  if (seed) {
-    // Use a simple seed-based random function
-    let seedNum = seed.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    random = () => {
-      const x = Math.sin(seedNum++) * 10000;
-      return x - Math.floor(x);
-    };
-  } else {
-    random = Math.random;
-  }
+  const random = seed ? seedrandom(seed) : seedrandom();
   
   // Generate the maze
   const grid = generateMaze(width, height, seed);

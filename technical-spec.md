@@ -16,6 +16,7 @@ interface Cell {
   };
   occupants: Agent[];
   discovered: boolean; // Whether this cell has been seen by any agent
+  lastVisitedDay?: number; // Day the cell was last visited
   basinId?: string; // If type is 'basin', which basin it belongs to
   dungeonId?: string; // If type is 'dungeon', which dungeon it belongs to
 }
@@ -57,8 +58,10 @@ interface Basin {
   radius: number; // Size of the basin area
   population: Agent[];
   resources: {
-    food: number;
-    water: number;
+    food: number; // Current food resources
+    water: number; // Current water resources
+    health: number; // Current health resources (for basins)
+    energy: number; // Current energy resources (for basins)
   };
   structures: Structure[]; // Built improvements
   history: Event[]; // Events that occurred in this basin
@@ -184,9 +187,10 @@ interface Achievement {
    - Ensure each dungeon has exactly one entrance path
 
 5. **Resource Distribution**:
-   - Assign high resource values to basin cells
-   - Create resource gradients that decrease with distance from basins
-   - Add random resource hotspots throughout the maze
+   - Assign high resource values to basin cells, including health and energy
+   - Basins replenish their resources over time.
+   - Create resource gradients that decrease with distance from basins.
+   - Add random resource hotspots throughout the maze.
 
 ### Agent Decision Making
 
@@ -194,8 +198,8 @@ interface Achievement {
    ```
    function decideAction(agent) {
      // Priority 1: Survival
-     if (agent.stats.hunger < 30 || agent.stats.thirst < 30) {
-       return findResourceAction(agent);
+     if (agent.stats.hunger < 30 || agent.stats.thirst < 30 || agent.stats.health < 50 || agent.stats.energy < 30) {
+       return findResourceAction(agent); // Agents prioritize returning to basin if any core stat is low
      }
      
      // Priority 2: Safety
@@ -204,7 +208,7 @@ interface Achievement {
      }
      
      // Priority 3: Advancement
-     if (agent.stats.hunger > 70 && agent.stats.thirst > 70 && agent.stats.health > 80) {
+     if (agent.stats.hunger > 70 && agent.stats.thirst > 70 && agent.stats.health > 80 && agent.stats.energy > 70) {
        // Chance to attempt dungeon based on personality
        if (shouldAttemptDungeon(agent)) {
          return createDungeonAction(agent);

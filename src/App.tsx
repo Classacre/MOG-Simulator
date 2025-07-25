@@ -4,7 +4,6 @@ import MazeGrid from './components/MazeGrid/MazeGrid';
 import SVGMazeGrid from './components/MazeGrid/SVGMazeGrid';
 import { Cell } from './models/Cell';
 import { Basin } from './models/Basin';
-import type { Dungeon } from './models/Dungeon';
 import type { DungeonEvent } from './models/Dungeon';
 import { Agent } from './models/Agent';
 import type { IAgent, Birthright } from './models/types';
@@ -22,6 +21,7 @@ import {
   importFromFile
 } from './utils/saveLoad';
 import { appReducer, type AppState } from './state';
+import { Button, Link, Input } from '@chakra-ui/react'; // Import Chakra UI components
 
 const initialState: AppState = {
   isSimulationRunning: false,
@@ -47,7 +47,7 @@ const initialState: AppState = {
   showSettings: false,
   newEventHighlight: false,
   preferences: {
-    darkMode: true,
+    darkMode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches,
     showEventNotifications: true,
     autoSaveEnabled: false,
     autoSaveInterval: 10,
@@ -68,6 +68,7 @@ const initialState: AppState = {
   agents: [],
   selectedAgent: null,
   selectedDungeon: null,
+  selectedCell: null, // Initialize selectedCell
   notableAgents: [],
   events: [],
   dungeonEvents: []
@@ -111,147 +112,12 @@ function App() {
     agents,
     selectedAgent,
     selectedDungeon,
+    selectedCell, // Destructure selectedCell
     notableAgents,
     events,
     dungeonEvents
   } = state;
 
-  // Simulation animation frame ref
-  const intervalRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
-
-  // Generate maze on mount
-  useEffect(() => {
-    generateMaze();
-    // eslint-disable-next-line
-  }, []);
-
-  // Simulation loop
-  useEffect(() => {
-    if (isSimulationRunning) {
-      // Performance optimization: Use requestAnimationFrame for smoother simulation
-      let lastFrameTime = 0;
-      const frameInterval = 1000 / simulationSpeed;
-      
-      const runSimulationFrame = (timestamp: number) => {
-        if (!isSimulationRunning) return;
-        
-        const elapsed = timestamp - lastFrameTime;
-        
-        if (elapsed >= frameInterval) {
-          lastFrameTime = timestamp;
-          nextDay();
-        }
-        
-        intervalRef.current = requestAnimationFrame(runSimulationFrame);
-      };
-      
-      intervalRef.current = requestAnimationFrame(runSimulationFrame);
-    } else if (intervalRef.current) {
-      cancelAnimationFrame(intervalRef.current as unknown as number);
-      intervalRef.current = null;
-    }
-    
-    return () => {
-      if (intervalRef.current) {
-        cancelAnimationFrame(intervalRef.current as unknown as number);
-        intervalRef.current = null;
-      }
-    };
-    // eslint-disable-next-line
-  }, [isSimulationRunning, simulationSpeed]);
-
-  // Skip days effect
-  useEffect(() => {
-    if (isSkipping) {
-      // Disable normal simulation while skipping
-      if (isSimulationRunning) {
-        dispatch({ type: 'SET_IS_SIMULATION_RUNNING', payload: false });
-      }
-      
-      let daysSkipped = 0;
-      const skipInterval = setInterval(() => {
-        nextDay();
-        daysSkipped++;
-        
-        if (daysSkipped >= skipDays) {
-          dispatch({ type: 'SET_IS_SKIPPING', payload: false });
-          clearInterval(skipInterval);
-        }
-      }, 50); // Process days much faster when skipping
-      
-      return () => {
-        clearInterval(skipInterval);
-      };
-    }
-  }, [isSkipping, skipDays]);
-
-  // Generate a new maze
-  const generateMaze = () => {
-    dispatch({ type: 'SET_IS_SIMULATION_RUNNING', payload: false });
-    dispatch({ type: 'SET_CURRENT_DAY', payload: 0 });
-    dispatch({ type: 'SET_EVENTS', payload: [] });
-    dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
-
-    const seed = mazeSeed || Math.random().toString(36).substring(2, 15);
-    dispatch({ type: 'SET_MAZE_SEED', payload: seed });
-
-    const { grid, basins, dungeons } = generateCompleteMaze(
-      mazeWidth,
-      mazeHeight,
-      basinCount,
-      Math.floor(basinCount * 1.5),
-      seed
-    );
-
-    dispatch({ type: 'SET_GRID', payload: grid });
-    dispatch({ type: 'SET_BASINS', payload: basins });
-    dispatch({ type: 'SET_DUNGEONS', payload: dungeons });
-
-    const newAgents = generateAgents(basins, populationPerBasin, initialCasualtyRate);
-    dispatch({ type: 'SET_AGENTS', payload: newAgents });
-
-    const initialEvents = [
-      `Day 0: Simulation initialized with seed "${seed}"`,
-      `Day 0: Generated maze with ${mazeWidth}x${mazeHeight} cells`,
-      `Day 0: Created ${basins.length} basins and ${dungeons.length} dungeons`,
-      `Day 0: Populated with ${newAgents.length} agents (${newAgents.filter(a => a.status === 'alive').length} alive)`
-    ];
-
-    dispatch({ type: 'SET_EVENTS', payload: initialEvents });
-    dispatch({ type: 'SET_DUNGEON_EVENTS', payload: [] });
-    dispatch({ type: 'SET_NOTABLE_AGENTS', payload: [] });
-    dispatch({ type: 'SET_FILTERED_EVENTS', payload: initialEvents });
-    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'all' });
-    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: null });
-  };
-
-  // Generate agents for each basin
-  const generateAgents = (
-    basins: Basin[],
-    populationPerBasin: number,
-    casualtyRate: number
-  ): Agent[] => {
-    const agents: Agent[] = [];
-    basins.forEach(basin => {
-      for (let i = 0; i < populationPerBasin; i++) {
-        const name = generateAgentName();
-        const birthright = generateBirthright();
-        const agent = new Agent(
-          `agent-${basin.id}-${i}`,
-          name,
-          { ...basin.location },
-          basin.id,
-          birthright
-        );
-        if (Math.random() * 100 < casualtyRate) {
-          agent.status = 'dead';
-        }
-        basin.addAgent(agent);
-        agents.push(agent);
-      }
-    });
-    return agents;
-  };
 
   // Generate a random agent name
   const generateAgentName = (): string => {
@@ -335,8 +201,82 @@ function App() {
     return birthrights[Math.floor(Math.random() * birthrights.length)];
   };
 
+  // Generate agents for each basin
+  const generateAgents = useCallback(
+    (
+      basins: Basin[],
+      populationPerBasin: number,
+      casualtyRate: number
+    ): Agent[] => {
+      const agents: Agent[] = [];
+      basins.forEach(basin => {
+        for (let i = 0; i < populationPerBasin; i++) {
+          const name = generateAgentName();
+          const birthright = generateBirthright();
+          const agent = new Agent(
+            `agent-${basin.id}-${i}`,
+            name,
+            { ...basin.location },
+            basin.id,
+            birthright
+          );
+          if (Math.random() * 100 < casualtyRate) {
+            agent.status = 'dead';
+          }
+          basin.addAgent(agent);
+          agents.push(agent);
+        }
+      });
+      return agents;
+    },
+    [] // No dependencies as generateAgentName and generateBirthright are pure functions
+  );
+
+  // Update filtered events based on filter settings
+  const updateFilteredEvents = useCallback((allEvents: string[]) => {
+    if (historyFilter === 'all' || !selectedHistoryId) {
+      dispatch({ type: 'SET_FILTERED_EVENTS', payload: allEvents });
+      return;
+    }
+    
+    let filtered: string[];
+    
+    // Find the relevant entity based on filter type
+    const agent = historyFilter === 'agent' ? agents.find(a => a.id === selectedHistoryId) : null;
+    const basin = historyFilter === 'basin' ? basins.find(b => b.id === selectedHistoryId) : null;
+    const dungeon = historyFilter === 'dungeon' ? dungeons.find(d => d.id === selectedHistoryId) : null;
+    
+    // Filter events based on the entity type
+    if (agent) {
+      // Filter events containing the agent's name
+      filtered = allEvents.filter(event =>
+        event.includes(agent.name)
+      );
+    } else if (basin) {
+      // Filter events related to a basin
+      filtered = allEvents.filter(event => {
+        // Include events that mention the basin name
+        if (event.includes(basin.name)) return true;
+        
+        // Include events that mention agents from this basin
+        // Find all agents from this basin
+        const basinAgents = agents.filter(a => a.basinOrigin === basin.id);
+        return basinAgents.some(a => event.includes(a.name));
+      });
+    } else if (dungeon) {
+      // Filter events related to a dungeon
+      filtered = allEvents.filter(event =>
+        event.includes(dungeon.name)
+      );
+    } else {
+      filtered = allEvents;
+    }
+    
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: filtered });
+  }, [historyFilter, selectedHistoryId, agents, basins, dungeons, dispatch]);
+
   // Advance simulation by one day
-  const nextDay = () => {
+  const nextDay = useCallback(() => {
     // Performance optimization: Batch all state updates
     const newDay = currentDay + 1;
     
@@ -416,55 +356,133 @@ function App() {
       // Update save list
       dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
     }
-  };
-  
-  // Update filtered events based on filter settings
-  const updateFilteredEvents = (allEvents: string[]) => {
-    if (historyFilter === 'all' || !selectedHistoryId) {
-      dispatch({ type: 'SET_FILTERED_EVENTS', payload: allEvents });
-      return;
-    }
-    
-    let filtered: string[];
-    
-    // Find the relevant entity based on filter type
-    const agent = historyFilter === 'agent' ? agents.find(a => a.id === selectedHistoryId) : null;
-    const basin = historyFilter === 'basin' ? basins.find(b => b.id === selectedHistoryId) : null;
-    const dungeon = historyFilter === 'dungeon' ? dungeons.find(d => d.id === selectedHistoryId) : null;
-    
-    // Filter events based on the entity type
-    if (agent) {
-      // Filter events containing the agent's name
-      filtered = allEvents.filter(event =>
-        event.includes(agent.name)
-      );
-    } else if (basin) {
-      // Filter events related to a basin
-      filtered = allEvents.filter(event => {
-        // Include events that mention the basin name
-        if (event.includes(basin.name)) return true;
+  }, [currentDay, agents, grid, basins, dungeons, mazeSeed, events, dungeonEvents,
+      preferences.showEventNotifications, preferences.autoSaveEnabled, preferences.autoSaveInterval,
+      mazeWidth, mazeHeight, dispatch, updateFilteredEvents]);
+
+  // Generate a new maze
+  const generateMaze = useCallback(() => {
+    dispatch({ type: 'SET_IS_SIMULATION_RUNNING', payload: false });
+    dispatch({ type: 'SET_CURRENT_DAY', payload: 0 });
+    dispatch({ type: 'SET_EVENTS', payload: [] });
+    dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
+
+    const seed = mazeSeed || Math.random().toString(36).substring(2, 15);
+    dispatch({ type: 'SET_MAZE_SEED', payload: seed });
+
+    const { grid, basins, dungeons } = generateCompleteMaze(
+      mazeWidth,
+      mazeHeight,
+      basinCount,
+      Math.floor(basinCount * 1.5),
+      seed
+    );
+
+    dispatch({ type: 'SET_GRID', payload: grid });
+    dispatch({ type: 'SET_BASINS', payload: basins });
+    dispatch({ type: 'SET_DUNGEONS', payload: dungeons });
+
+    const newAgents = generateAgents(basins, populationPerBasin, initialCasualtyRate);
+    dispatch({ type: 'SET_AGENTS', payload: newAgents });
+
+    const initialEvents = [
+      `Day 0: Simulation initialized with seed "${seed}"`,
+      `Day 0: Generated maze with ${mazeWidth}x${mazeHeight} cells`,
+      `Day 0: Created ${basins.length} basins and ${dungeons.length} dungeons`,
+      `Day 0: Populated with ${newAgents.length} agents (${newAgents.filter(a => a.status === 'alive').length} alive)`
+    ];
+
+    dispatch({ type: 'SET_EVENTS', payload: initialEvents });
+    dispatch({ type: 'SET_DUNGEON_EVENTS', payload: [] });
+    dispatch({ type: 'SET_NOTABLE_AGENTS', payload: [] });
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: initialEvents });
+    dispatch({ type: 'SET_HISTORY_FILTER', payload: 'all' });
+    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: null });
+  }, [dispatch, mazeSeed, mazeWidth, mazeHeight, basinCount, populationPerBasin, initialCasualtyRate, generateAgents]);
+
+  // Simulation animation frame ref
+  const intervalRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+
+  // Generate maze on mount
+  useEffect(() => {
+    generateMaze();
+  }, [generateMaze]);
+
+  // Simulation loop
+  useEffect(() => {
+    if (isSimulationRunning) {
+      // Performance optimization: Use requestAnimationFrame for smoother simulation
+      let lastFrameTime = 0;
+      const frameInterval = 1000 / simulationSpeed;
+      
+      const runSimulationFrame = (timestamp: number) => {
+        if (!isSimulationRunning) return;
         
-        // Include events that mention agents from this basin
-        // Find all agents from this basin
-        const basinAgents = agents.filter(a => a.basinOrigin === basin.id);
-        return basinAgents.some(a => event.includes(a.name));
-      });
-    } else if (dungeon) {
-      // Filter events related to a dungeon
-      filtered = allEvents.filter(event =>
-        event.includes(dungeon.name)
-      );
-    } else {
-      filtered = allEvents;
+        const elapsed = timestamp - lastFrameTime;
+        
+        if (elapsed >= frameInterval) {
+          lastFrameTime = timestamp;
+          nextDay();
+        }
+        
+        intervalRef.current = requestAnimationFrame(runSimulationFrame);
+      };
+      
+      intervalRef.current = requestAnimationFrame(runSimulationFrame);
+    } else if (intervalRef.current) {
+      cancelAnimationFrame(intervalRef.current as unknown as number);
+      intervalRef.current = null;
     }
     
-    dispatch({ type: 'SET_FILTERED_EVENTS', payload: filtered });
-  };
+    return () => {
+      if (intervalRef.current) {
+        cancelAnimationFrame(intervalRef.current as unknown as number);
+        intervalRef.current = null;
+      }
+    };
+  }, [isSimulationRunning, simulationSpeed, nextDay]);
+
+  // Apply dark mode class to html element
+  useEffect(() => {
+    const root = window.document.documentElement;
+    if (preferences.darkMode) {
+      root.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      root.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [preferences.darkMode]);
+
+  // Skip days effect
+  useEffect(() => {
+    if (isSkipping) {
+      // Disable normal simulation while skipping
+      if (isSimulationRunning) {
+        dispatch({ type: 'SET_IS_SIMULATION_RUNNING', payload: false });
+      }
+      
+      let daysSkipped = 0;
+      const skipInterval = setInterval(() => {
+        nextDay();
+        daysSkipped++;
+        
+        if (daysSkipped >= skipDays) {
+          dispatch({ type: 'SET_IS_SKIPPING', payload: false });
+          clearInterval(skipInterval);
+        }
+      }, 50); // Process days much faster when skipping
+      
+      return () => {
+        clearInterval(skipInterval);
+      };
+    }
+  }, [isSkipping, skipDays, isSimulationRunning, nextDay]);
 
   // Toggle simulation running state
   const toggleSimulation = useCallback(() => {
     dispatch({ type: 'TOGGLE_SIMULATION' });
-  }, []);
+  }, [dispatch]);
 
   // Reset simulation with confirmation
   const resetSimulation = useCallback(() => {
@@ -477,7 +495,7 @@ function App() {
       },
     });
     dispatch({ type: 'SET_SHOW_CONFIRMATION', payload: true });
-  }, []);
+  }, [dispatch, generateMaze]);
   
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -530,16 +548,21 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isSimulationRunning, isSkipping, nextDay, toggleSimulation, resetSimulation,
-      saveModalOpen, loadModalOpen, showConfirmation, showHelp]);
-      
+  }, [isSimulationRunning, isSkipping, toggleSimulation, nextDay, resetSimulation,
+      saveModalOpen, loadModalOpen, showConfirmation, showHelp, dispatch]);
+
+  // Update filtered events when filter settings change
+  useEffect(() => {
+    updateFilteredEvents(events);
+  }, [historyFilter, selectedHistoryId, events, updateFilteredEvents]);
+
   // Show tooltip for UI elements
   const handleShowTooltip = (text: string, e: React.MouseEvent) => {
     dispatch({ type: 'SET_SHOW_TOOLTIP', payload: text });
     dispatch({ type: 'SET_TOOLTIP_POSITION', payload: {
       x: e.clientX,
       y: e.clientY + 10 // Offset to show below cursor
-    }});
+    } });
   };
   
   const handleHideTooltip = () => {
@@ -547,7 +570,7 @@ function App() {
   };
 
   // Handle cell click
-  const handleCellClick = (cell: Cell) => {
+  const handleCellClick = useCallback((cell: Cell) => {
     // If cell is a dungeon, select the dungeon
     if (cell.type === 'dungeon' && cell.dungeonId) {
       const dungeon = dungeons.find(d => d.id === cell.dungeonId);
@@ -558,43 +581,43 @@ function App() {
     } else {
       dispatch({ type: 'SET_SELECTED_DUNGEON', payload: null });
     }
-  };
+  }, [dungeons, dispatch]);
 
   // Handle agent click
-  const handleAgentClick = (agent: IAgent) => {
+  const handleAgentClick = useCallback((agent: IAgent) => {
     const agentInstance = agents.find(a => a.id === agent.id);
     if (agentInstance) {
       dispatch({ type: 'SET_SELECTED_AGENT', payload: agentInstance });
       dispatch({ type: 'SET_SELECTED_DUNGEON', payload: null });
     }
-  };
+  }, [agents, dispatch]);
   
   // Set history filter to view events for a specific agent
-  const viewAgentHistory = (agentId: string) => {
+  const viewAgentHistory = useCallback((agentId: string) => {
     dispatch({ type: 'SET_HISTORY_FILTER', payload: 'agent' });
     dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: agentId });
     updateFilteredEvents(events);
-  };
+  }, [dispatch, updateFilteredEvents, events]);
   
   // Set history filter to view events for a specific basin
-  const viewBasinHistory = (basinId: string) => {
+  const viewBasinHistory = useCallback((basinId: string) => {
     dispatch({ type: 'SET_HISTORY_FILTER', payload: 'basin' });
     dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: basinId });
     updateFilteredEvents(events);
-  };
+  }, [dispatch, updateFilteredEvents, events]);
   
   // Set history filter to view events for a specific dungeon
-  const viewDungeonHistory = (dungeonId: string) => {
+  const viewDungeonHistory = useCallback((dungeonId: string) => {
     dispatch({ type: 'SET_HISTORY_FILTER', payload: 'dungeon' });
     dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: dungeonId });
     updateFilteredEvents(events);
-  };
+  }, [dispatch, updateFilteredEvents, events]);
   
   // Save the current simulation state
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (!saveName) return;
     
-    const state = {
+    const simulationState = { // Renamed to avoid conflict with dispatch(state)
       seed: mazeSeed,
       currentDay,
       mazeWidth,
@@ -606,53 +629,53 @@ function App() {
       events
     };
     
-    const saveData = saveSimulation(state);
+    const saveData = saveSimulation(simulationState);
     saveToLocalStorage(saveName, saveData);
     
     // Update save list
     dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
     dispatch({ type: 'SET_SAVE_MODAL_OPEN', payload: false });
     dispatch({ type: 'SET_SAVE_NAME', payload: '' });
-  };
+  }, [saveName, mazeSeed, currentDay, mazeWidth, mazeHeight, grid, basins, dungeons, agents, events, dispatch]);
   
   // Load a saved simulation state
-  const handleLoad = () => {
+  const handleLoad = useCallback(() => {
     if (!selectedSave) return;
     
     const saveData = loadFromLocalStorage(selectedSave);
     if (!saveData) return;
     
-    const state = loadSimulation(saveData);
+    const loadedState = loadSimulation(saveData); // Renamed to avoid conflict with dispatch(state)
     
     // Update state with loaded data
-    dispatch({ type: 'SET_MAZE_SEED', payload: state.seed });
-    dispatch({ type: 'SET_CURRENT_DAY', payload: state.currentDay });
-    dispatch({ type: 'SET_MAZE_WIDTH', payload: state.mazeWidth });
-    dispatch({ type: 'SET_MAZE_HEIGHT', payload: state.mazeHeight });
-    dispatch({ type: 'SET_GRID', payload: state.grid });
-    dispatch({ type: 'SET_BASINS', payload: state.basins });
-    dispatch({ type: 'SET_DUNGEONS', payload: state.dungeons });
-    dispatch({ type: 'SET_AGENTS', payload: state.agents });
-    dispatch({ type: 'SET_EVENTS', payload: state.events });
-    dispatch({ type: 'SET_FILTERED_EVENTS', payload: state.events });
+    dispatch({ type: 'SET_MAZE_SEED', payload: loadedState.seed });
+    dispatch({ type: 'SET_CURRENT_DAY', payload: loadedState.currentDay });
+    dispatch({ type: 'SET_MAZE_WIDTH', payload: loadedState.mazeWidth });
+    dispatch({ type: 'SET_MAZE_HEIGHT', payload: loadedState.mazeHeight });
+    dispatch({ type: 'SET_GRID', payload: loadedState.grid });
+    dispatch({ type: 'SET_BASINS', payload: loadedState.basins });
+    dispatch({ type: 'SET_DUNGEONS', payload: loadedState.dungeons });
+    dispatch({ type: 'SET_AGENTS', payload: loadedState.agents });
+    dispatch({ type: 'SET_EVENTS', payload: loadedState.events });
+    dispatch({ type: 'SET_FILTERED_EVENTS', payload: loadedState.events });
     
     // Close modal
     dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: false });
     dispatch({ type: 'SET_SELECTED_SAVE', payload: null });
-  };
+  }, [selectedSave, dispatch]);
   
   // Delete a saved simulation state
-  const handleDelete = (name: string) => {
+  const handleDelete = useCallback((name: string) => {
     deleteSave(name);
     dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
     if (selectedSave === name) {
       dispatch({ type: 'SET_SELECTED_SAVE', payload: null });
     }
-  };
+  }, [selectedSave, dispatch]);
   
   // Export the current simulation state to a file
-  const handleExport = () => {
-    const state = {
+  const handleExport = useCallback(() => {
+    const simulationState = { // Renamed to avoid conflict with dispatch(state)
       seed: mazeSeed,
       currentDay,
       mazeWidth,
@@ -664,12 +687,12 @@ function App() {
       events
     };
     
-    const saveData = saveSimulation(state);
+    const saveData = saveSimulation(simulationState);
     exportToFile(saveData, `mog-simulator-${mazeSeed}-day-${currentDay}.json`);
-  };
+  }, [mazeSeed, currentDay, mazeWidth, mazeHeight, grid, basins, dungeons, agents, events]);
   
   // Import a simulation state from a file
-  const handleImport = async () => {
+  const handleImport = useCallback(async () => {
     if (!importFile) return;
     
     try {
@@ -694,39 +717,40 @@ function App() {
     } catch (error) {
       console.error('Failed to import file:', error);
     }
-  };
+  }, [importFile, dispatch]); // Removed mazeWidth, mazeHeight from dependencies as they are not used in the callback logic
   
   // Reset history filter to view all events
-  const resetHistoryFilter = () => {
+  const resetHistoryFilter = useCallback(() => {
     dispatch({ type: 'SET_HISTORY_FILTER', payload: 'all' });
     dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: null });
     dispatch({ type: 'SET_FILTERED_EVENTS', payload: events });
-  };
+  }, [dispatch, events]);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
+    <div className="min-h-screen bg-white dark:bg-gray-900 text-gray-800 dark:text-white p-4">
       <header className="mb-4 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">MOG-Simulator</h1>
-          <p className="text-gray-400">Maze of Gods Civilization Simulator</p>
+          <p className="text-gray-500 dark:text-gray-400">Maze of Gods Civilization Simulator</p>
         </div>
         <div className="flex items-center space-x-2">
-          <button
+          <Button
             id="helpButton"
-            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm cursor-pointer"
+            colorScheme="blue"
+            size="sm"
             onClick={() => dispatch({ type: 'SET_SHOW_HELP', payload: true })}
             onMouseEnter={(e) => handleShowTooltip('View help and keyboard shortcuts', e)}
             onMouseLeave={handleHideTooltip}
           >
             Help
-          </button>
-          <div className="text-xs text-gray-400">Day: {currentDay}</div>
+          </Button>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Day: {currentDay}</div>
         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Main content area - Maze Grid */}
-        <div className="lg:col-span-2 bg-gray-800 rounded-lg p-4 h-[600px]">
+        <div className="lg:col-span-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-4 h-[600px]">
           {grid.length > 0 ? (
             preferences.useSVGMode ? (
               <SVGMazeGrid
@@ -736,12 +760,14 @@ function App() {
                 dungeons={dungeons}
                 selectedAgent={selectedAgent}
                 selectedDungeon={selectedDungeon}
+                selectedCell={selectedCell} // Pass selectedCell
                 onCellClick={handleCellClick}
                 onAgentClick={handleAgentClick}
                 onBasinClick={(basin) => viewBasinHistory(basin.id)}
                 onDungeonClick={(dungeon) => {
                   dispatch({ type: 'SET_SELECTED_DUNGEON', payload: dungeon });
                   dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
+                  dispatch({ type: 'SET_SELECTED_CELL', payload: null }); // Deselect cell
                 }}
                 highlightNotable={preferences.highlightNotableAgents}
               />
@@ -753,12 +779,14 @@ function App() {
                 dungeons={dungeons}
                 selectedAgent={selectedAgent}
                 selectedDungeon={selectedDungeon}
+                selectedCell={selectedCell} // Pass selectedCell
                 onCellClick={handleCellClick}
                 onAgentClick={handleAgentClick}
                 onBasinClick={(basin) => viewBasinHistory(basin.id)}
                 onDungeonClick={(dungeon) => {
                   dispatch({ type: 'SET_SELECTED_DUNGEON', payload: dungeon });
                   dispatch({ type: 'SET_SELECTED_AGENT', payload: null });
+                  dispatch({ type: 'SET_SELECTED_CELL', payload: null }); // Deselect cell
                 }}
                 highlightNotable={preferences.highlightNotableAgents}
               />
@@ -773,102 +801,105 @@ function App() {
         {/* Right sidebar - Controls, Events, Stats */}
         <div className="space-y-4">
           {/* Control Panel */}
-          <div className="bg-gray-800 rounded-lg p-4">
+          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl">Control Panel</h2>
-              <button
+              <Button
                 id="settingsButton"
-                className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs cursor-pointer"
+                colorScheme="gray"
+                size="xs"
                 onClick={() => dispatch({ type: 'SET_SHOW_SETTINGS', payload: true })}
                 onMouseEnter={(e) => handleShowTooltip('Open settings', e)}
                 onMouseLeave={handleHideTooltip}
               >
                 Settings
-              </button>
+              </Button>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                className={`${isSimulationRunning ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-blue-600 hover:bg-blue-700'} px-4 py-2 rounded`}
-                onClick={toggleSimulation}
+              <Button
+                colorScheme={isSimulationRunning ? 'yellow' : 'blue'}
+                onClick={() => dispatch({type: 'TOGGLE_SIMULATION'})}
                 disabled={isSkipping}
                 onMouseEnter={(e) => handleShowTooltip('Start/Pause simulation (Space)', e)}
                 onMouseLeave={handleHideTooltip}
               >
                 {isSimulationRunning ? 'Pause' : 'Start'}
-              </button>
-              <button
-                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
+              </Button>
+              <Button
+                colorScheme="green"
                 onClick={nextDay}
                 disabled={isSimulationRunning || isSkipping}
                 onMouseEnter={(e) => handleShowTooltip('Advance one day (N)', e)}
                 onMouseLeave={handleHideTooltip}
               >
                 Next Day
-              </button>
-              <button
-                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded"
+              </Button>
+              <Button
+                colorScheme="red"
                 onClick={resetSimulation}
                 disabled={isSkipping}
                 onMouseEnter={(e) => handleShowTooltip('Reset simulation (Ctrl+R)', e)}
                 onMouseLeave={handleHideTooltip}
               >
                 Reset
-              </button>
+              </Button>
             </div>
             
             <div className="mt-3 flex flex-wrap items-center gap-4">
               <div className="flex items-center">
                 <label htmlFor="speed" className="mr-2 text-sm">Speed:</label>
-                <input
+                <Input
                   type="range"
                   id="speed"
                   min="1"
                   max="20"
                   value={simulationSpeed}
-                  onChange={(e) => dispatch({ type: 'SET_SIMULATION_SPEED', payload: parseInt(e.target.value) })}
-                  className="w-24"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_SIMULATION_SPEED', payload: parseInt(e.target.value) })}
+                  width="96px"
                 />
                 <span className="ml-1 text-sm">{simulationSpeed}x</span>
               </div>
               
               <div className="flex items-center gap-2">
                 <label htmlFor="skipDays" className="text-sm">Skip:</label>
-                <input
+                <Input
                   type="number"
                   id="skipDays"
                   min="1"
                   max="100"
                   value={skipDays}
-                  onChange={(e) => dispatch({ type: 'SET_SKIP_DAYS', payload: parseInt(e.target.value) })}
-                  className="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_SKIP_DAYS', payload: parseInt(e.target.value) })}
+                  width="64px"
+                  size="sm"
                 />
                 <span className="text-sm">days</span>
-                <button
-                  className="bg-purple-600 hover:bg-purple-700 px-3 py-1 rounded text-sm"
+                <Button
+                  colorScheme="purple"
+                  size="sm"
                   onClick={() => dispatch({ type: 'SET_IS_SKIPPING', payload: true })}
                   disabled={isSkipping || isSimulationRunning}
                 >
                   Skip
-                </button>
+                </Button>
               </div>
             </div>
             
             {/* Save/Load Buttons */}
-            <div className="bg-gray-800 rounded-lg p-4">
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
               <h2 className="text-xl mb-2">Save/Load</h2>
               <div className="flex space-x-2">
-                <button
+                <Button
                   id="saveButton"
-                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded cursor-pointer"
+                  colorScheme="blue"
                   onClick={() => dispatch({ type: 'SET_SAVE_MODAL_OPEN', payload: true })}
                   onMouseEnter={(e) => handleShowTooltip('Save simulation (Ctrl+S)', e)}
                   onMouseLeave={handleHideTooltip}
                 >
                   Save
-                </button>
-                <button
+                </Button>
+                <Button
                   id="loadButton"
-                  className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded cursor-pointer"
+                  colorScheme="green"
                   onClick={() => {
                     dispatch({ type: 'SET_SAVE_LIST', payload: getSaveList() });
                     dispatch({ type: 'SET_LOAD_MODAL_OPEN', payload: true });
@@ -877,16 +908,16 @@ function App() {
                   onMouseLeave={handleHideTooltip}
                 >
                   Load
-                </button>
-                <button
+                </Button>
+                <Button
                   id="exportButton"
-                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded cursor-pointer"
+                  colorScheme="purple"
                   onClick={() => handleExport()}
                   onMouseEnter={(e) => handleShowTooltip('Export simulation to file', e)}
                   onMouseLeave={handleHideTooltip}
                 >
                   Export
-                </button>
+                </Button>
               </div>
             </div>
             
@@ -898,16 +929,17 @@ function App() {
           </div>
 
           {/* Event Log */}
-          <div className={`bg-gray-800 rounded-lg p-4 ${newEventHighlight ? 'ring-2 ring-yellow-500 transition-all duration-300' : ''}`}>
+          <div className={`bg-gray-100 dark:bg-gray-800 rounded-lg p-4 ${newEventHighlight ? 'ring-2 ring-yellow-500 transition-all duration-300' : ''}`}>
             <div className="flex justify-between items-center mb-2">
               <h2 className="text-xl">Event Log</h2>
               <div className="flex items-center space-x-2">
                 <select
-                  className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+                  className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm"
                   value={historyFilter}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                     const value = e.target.value as 'all' | 'agent' | 'basin' | 'dungeon';
                     dispatch({ type: 'SET_HISTORY_FILTER', payload: value });
+                    dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: null });
                     if (value === 'all') {
                       resetHistoryFilter();
                     }
@@ -921,11 +953,10 @@ function App() {
                 
                 {historyFilter !== 'all' && (
                   <select
-                    className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm"
+                    className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm"
                     value={selectedHistoryId || ''}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                       dispatch({ type: 'SET_SELECTED_HISTORY_ID', payload: e.target.value });
-                      updateFilteredEvents(events);
                     }}
                   >
                     <option value="">Select...</option>
@@ -942,25 +973,27 @@ function App() {
                 )}
                 
                 {historyFilter !== 'all' && selectedHistoryId && (
-                  <button
-                    className="bg-gray-700 hover:bg-gray-600 rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                  <Button
+                    size="xs"
+                    colorScheme="gray"
+                    variant="ghost"
                     onClick={resetHistoryFilter}
                   >
                     ✕
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
             
-            <div className={`h-[200px] overflow-y-auto bg-gray-900 p-2 rounded event-log ${preferences.compactUI ? 'text-xs leading-tight' : ''}`}>
+            <div className={`h-[200px] overflow-y-auto bg-white dark:bg-gray-900 p-2 rounded event-log ${preferences.compactUI ? 'text-xs leading-tight' : ''}`}>
               {filteredEvents.length > 0 ? (
                 filteredEvents.map((event, index) => (
-                  <p key={`event-${index}`} className="text-gray-300 mb-1">
+                  <p key={`event-${index}`} className="text-gray-600 dark:text-gray-300 mb-1">
                     {event}
                   </p>
                 ))
               ) : (
-                <p className="text-gray-400">
+                <p className="text-gray-500 dark:text-gray-400">
                   {events.length > 0 ? 'No events match the current filter.' : 'Events will appear here as the simulation runs.'}
                 </p>
               )}
@@ -968,31 +1001,31 @@ function App() {
           </div>
 
           {/* Stats Panel */}
-          <div className="bg-gray-800 rounded-lg p-4">
+          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
             <h2 className="text-xl mb-2">Statistics</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              <div className="bg-gray-900 p-2 rounded">
-                <p className="text-sm text-gray-400">Day</p>
+              <div className="bg-white dark:bg-gray-900 p-2 rounded">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Day</p>
                 <p className="text-xl">{currentDay}</p>
               </div>
-              <div className="bg-gray-900 p-2 rounded">
-                <p className="text-sm text-gray-400">Population</p>
+              <div className="bg-white dark:bg-gray-900 p-2 rounded">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Population</p>
                 <p className="text-xl">{agents.filter(a => a.status !== 'dead').length}</p>
               </div>
-              <div className="bg-gray-900 p-2 rounded">
-                <p className="text-sm text-gray-400">Basins</p>
+              <div className="bg-white dark:bg-gray-900 p-2 rounded">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Basins</p>
                 <p className="text-xl">{basins.length}</p>
               </div>
-              <div className="bg-gray-900 p-2 rounded">
-                <p className="text-sm text-gray-400">Dungeons</p>
+              <div className="bg-white dark:bg-gray-900 p-2 rounded">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Dungeons</p>
                 <p className="text-xl">{dungeons.length}</p>
               </div>
-              <div className="bg-gray-900 p-2 rounded">
-                <p className="text-sm text-gray-400">Augmented Agents</p>
+              <div className="bg-white dark:bg-gray-900 p-2 rounded">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Augmented Agents</p>
                 <p className="text-xl">{agents.filter(a => a.augment !== null).length}</p>
               </div>
-              <div className="bg-gray-900 p-2 rounded">
-                <p className="text-sm text-gray-400">Dungeon Attempts</p>
+              <div className="bg-white dark:bg-gray-900 p-2 rounded">
+                <p className="text-sm text-gray-500 dark:text-gray-400">Dungeon Attempts</p>
                 <p className="text-xl">{dungeonEvents.length}</p>
               </div>
             </div>
@@ -1000,84 +1033,88 @@ function App() {
           
           {/* Agent Details (if selected) */}
           {selectedAgent && (
-            <div className="bg-gray-800 rounded-lg p-4">
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
               <h2 className="text-xl mb-2">Agent Details</h2>
-              <div className="bg-gray-900 p-3 rounded">
+              <div className="bg-white dark:bg-gray-900 p-3 rounded">
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-lg font-bold">{selectedAgent.name}</h3>
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       Status: <span className={
-                        selectedAgent.status === 'alive' ? 'text-green-400' :
-                        selectedAgent.status === 'injured' ? 'text-yellow-400' :
-                        'text-red-400'
+                        selectedAgent.status === 'alive' ? 'text-green-500' :
+                        selectedAgent.status === 'injured' ? 'text-yellow-500' :
+                        'text-red-500'
                       }>{selectedAgent.status}</span>
                     </p>
                   </div>
-                  <button 
-                    className="text-gray-400 hover:text-white"
+                  <Button
+                    size="xs"
+                    colorScheme="gray"
+                    variant="ghost"
                     onClick={() => dispatch({ type: 'SET_SELECTED_AGENT', payload: null })}
                   >
                     ✕
-                  </button>
+                  </Button>
                 </div>
                 
                 <div className="mt-2">
                   <p className="text-sm">
-                    <span className="text-gray-400">Basin:</span> {' '}
-                    <button
-                      className="text-blue-400 hover:underline"
+                    <span className="text-gray-500 dark:text-gray-400">Basin:</span> {' '}
+                    <Link
+                      className="text-blue-600 dark:text-blue-400"
                       onClick={() => viewBasinHistory(selectedAgent.basinOrigin)}
                     >
                       {basins.find(b => b.id === selectedAgent.basinOrigin)?.name || selectedAgent.basinOrigin}
-                    </button>
+                    </Link>
                   </p>
                   <p className="text-sm">
-                    <span className="text-gray-400">Days Survived:</span> {selectedAgent.daysSurvived}
-                    <button
-                      className="ml-2 text-blue-400 hover:underline text-xs"
+                    <span className="text-gray-500 dark:text-gray-400">Days Survived:</span> {selectedAgent.daysSurvived}
+                    <Link
+                      ml={2}
+                      className="text-blue-600 dark:text-blue-400"
+                      fontSize="xs"
                       onClick={() => viewAgentHistory(selectedAgent.id)}
                     >
                       View History
-                    </button>
+                    </Link>
                   </p>
                   <p className="text-sm">
-                    <span className="text-gray-400">Location:</span> ({selectedAgent.location.x}, {selectedAgent.location.y})
+                    <span className="text-gray-500 dark:text-gray-400">Location:</span> ({selectedAgent.location.x}, {selectedAgent.location.y})
                   </p>
                 </div>
                 
                 <div className="mt-3">
-                  <h4 className="font-bold text-sm border-b border-gray-700 pb-1 mb-1">Stats</h4>
+                  <h4 className="font-bold text-sm border-b border-gray-300 dark:border-gray-700 pb-1 mb-1">Stats</h4>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                     <p className="text-sm">
-                      <span className="text-gray-400">Health:</span> {selectedAgent.stats.health}%
+                      <span className="text-gray-500 dark:text-gray-400">Health:</span> {selectedAgent.stats.health}%
                     </p>
                     <p className="text-sm">
-                      <span className="text-gray-400">Hunger:</span> {selectedAgent.stats.hunger}%
+                      <span className="text-gray-500 dark:text-gray-400">Hunger:</span> {selectedAgent.stats.hunger}%
                     </p>
                     <p className="text-sm">
-                      <span className="text-gray-400">Thirst:</span> {selectedAgent.stats.thirst}%
+                      <span className="text-gray-500 dark:text-gray-400">Thirst:</span> {selectedAgent.stats.thirst}%
                     </p>
                     <p className="text-sm">
-                      <span className="text-gray-400">Energy:</span> {selectedAgent.stats.energy}%
+                      <span className="text-gray-500 dark:text-gray-400">Energy:</span> {selectedAgent.stats.energy}%
                     </p>
                     <p className="text-sm">
-                      <span className="text-gray-400">Morale:</span> {selectedAgent.stats.morale}%
+                      <span className="text-gray-500 dark:text-gray-400">Morale:</span> {selectedAgent.stats.morale}%
                     </p>
                   </div>
                 </div>
                 
                 <div className="mt-3">
-                  <h4 className="font-bold text-sm border-b border-gray-700 pb-1 mb-1">Birthright</h4>
+                  <h4 className="font-bold text-sm border-b border-gray-300 dark:border-gray-700 pb-1 mb-1">Birthright</h4>
                   <p className="text-sm font-medium">{selectedAgent.birthright.name}</p>
-                  <p className="text-xs text-gray-400">{selectedAgent.birthright.description}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{selectedAgent.birthright.description}</p>
                 </div>
                 
                 {selectedAgent.augment && (
                   <div className="mt-3">
-                    <h4 className="font-bold text-sm border-b border-gray-700 pb-1 mb-1">Augment</h4>
+                    <h4 className="font-bold text-sm border-b border-gray-300 dark:border-gray-700 pb-1 mb-1">Augment</h4>
                     <p className="text-sm font-medium">{selectedAgent.augment.name}</p>
-                    <p className="text-xs text-gray-400">{selectedAgent.augment.description}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{selectedAgent.augment.description}</p>
                   </div>
                 )}
               </div>
@@ -1086,13 +1123,13 @@ function App() {
 
           {/* Notable Characters Panel */}
           {notableAgents.length > 0 && (
-            <div className="bg-gray-800 rounded-lg p-4">
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
               <h2 className="text-xl mb-2">Notable Characters</h2>
               <div className="max-h-[200px] overflow-y-auto">
                 {notableAgents.map(agent => (
                   <div
                     key={`notable-${agent.id}`}
-                    className="bg-gray-900 p-2 rounded mb-2 cursor-pointer hover:bg-gray-700"
+                    className="bg-white dark:bg-gray-900 p-2 rounded mb-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
                     onClick={() => dispatch({ type: 'SET_SELECTED_AGENT', payload: agent })}
                   >
                     <div className="flex items-center">
@@ -1104,7 +1141,7 @@ function App() {
                       />
                       <div>
                         <p className="font-medium">{agent.name}</p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {agent.augment ?
                             `Augmented (${agent.augment.name})` :
                             `Survived ${agent.daysSurvived} days`}
@@ -1119,34 +1156,38 @@ function App() {
 
           {/* Dungeon Details (if selected) */}
           {selectedDungeon && (
-            <div className="bg-gray-800 rounded-lg p-4">
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
               <h2 className="text-xl mb-2">Dungeon Details</h2>
-              <div className="bg-gray-900 p-3 rounded">
+              <div className="bg-white dark:bg-gray-900 p-3 rounded">
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-lg font-bold">{selectedDungeon.name}</h3>
-                    <p className="text-sm text-gray-400">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
                       Difficulty: <span className={
-                        selectedDungeon.difficulty <= 3 ? 'text-green-400' :
-                        selectedDungeon.difficulty <= 7 ? 'text-yellow-400' :
-                        'text-red-400'
+                        selectedDungeon.difficulty <= 3 ? 'text-green-500' :
+                        selectedDungeon.difficulty <= 7 ? 'text-yellow-500' :
+                        'text-red-500'
                       }>{selectedDungeon.difficulty}/10</span>
                     </p>
                   </div>
-                  <button
-                    className="text-gray-400 hover:text-white"
+                  <Button
+                    size="xs"
+                    colorScheme="gray"
+                    variant="ghost"
                     onClick={() => dispatch({ type: 'SET_SELECTED_DUNGEON', payload: null })}
                   >
                     ✕
-                  </button>
+                  </Button>
                 </div>
                 
                 <div className="mt-2">
                   <p className="text-sm">
-                    <span className="text-gray-400">Location:</span> ({selectedDungeon.location.x}, {selectedDungeon.location.y})
-                    <button
+                    <span className="text-gray-500 dark:text-gray-400">Location:</span> ({selectedDungeon.location.x}, {selectedDungeon.location.y})
+                    <Link
                       id="viewDungeonHistoryButton"
-                      className="ml-2 text-blue-400 hover:underline text-xs"
+                      ml={2}
+                      className="text-blue-600 dark:text-blue-400"
+                      fontSize="xs"
                       onClick={() => {
                         viewDungeonHistory(selectedDungeon.id);
                         // Scroll to event log
@@ -1157,35 +1198,35 @@ function App() {
                       }}
                     >
                       View History
-                    </button>
+                    </Link>
                   </p>
                   <p className="text-sm">
-                    <span className="text-gray-400">Success Rate:</span> {selectedDungeon.getSuccessRate().toFixed(1)}%
+                    <span className="text-gray-500 dark:text-gray-400">Success Rate:</span> {selectedDungeon.getSuccessRate().toFixed(1)}%
                   </p>
                   <p className="text-sm">
-                    <span className="text-gray-400">Attempts:</span> {selectedDungeon.getTotalAttempts()} ({selectedDungeon.getSuccessfulAttempts()} successful, {selectedDungeon.getFailedAttempts()} failed)
+                    <span className="text-gray-500 dark:text-gray-400">Attempts:</span> {selectedDungeon.getTotalAttempts()} ({selectedDungeon.getSuccessfulAttempts()} successful, {selectedDungeon.getFailedAttempts()} failed)
                   </p>
                 </div>
                 
                 <div className="mt-3">
-                  <h4 className="font-bold text-sm border-b border-gray-700 pb-1 mb-1">Augment Reward</h4>
+                  <h4 className="font-bold text-sm border-b border-gray-300 dark:border-gray-700 pb-1 mb-1">Augment Reward</h4>
                   <p className="text-sm font-medium">{selectedDungeon.augmentReward.name}</p>
-                  <p className="text-xs text-gray-400">{selectedDungeon.augmentReward.description}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{selectedDungeon.augmentReward.description}</p>
                 </div>
                 
                 {selectedDungeon.history.length > 0 && (
                   <div className="mt-3">
-                    <h4 className="font-bold text-sm border-b border-gray-700 pb-1 mb-1">Recent Attempts</h4>
+                    <h4 className="font-bold text-sm border-b border-gray-300 dark:border-gray-700 pb-1 mb-1">Recent Attempts</h4>
                     <div className="max-h-32 overflow-y-auto">
                       {selectedDungeon.history
                         .slice()
                         .reverse()
                         .slice(0, 5)
                         .map((event, index) => (
-                          <div key={`event-${index}`} className="text-xs mb-1 pb-1 border-b border-gray-800">
+                          <div key={`event-${index}`} className="text-xs mb-1 pb-1 border-b border-gray-200 dark:border-gray-800">
                             <p>
-                              <span className="text-gray-400">Day {event.day}:</span> {event.agentName}
-                              <span className={event.success ? ' text-green-400' : ' text-red-400'}>
+                              <span className="text-gray-500 dark:text-gray-400">Day {event.day}:</span> {event.agentName}
+                              <span className={event.success ? ' text-green-500' : ' text-red-500'}>
                                 {event.success ? ' succeeded' : ' failed'}
                               </span>
                             </p>
@@ -1197,119 +1238,173 @@ function App() {
               </div>
             </div>
           )}
+          
+          {/* Cell Details (if selected) */}
+          {selectedCell && (
+            <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+              <h2 className="text-xl mb-2">Cell Details</h2>
+              <div className="bg-white dark:bg-gray-900 p-3 rounded">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-lg font-bold">Cell ({selectedCell.position.x}, {selectedCell.position.y})</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Type: {selectedCell.type}
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Discovered: {selectedCell.discovered ? 'Yes' : 'No'}
+                    </p>
+                    {selectedCell.lastVisitedDay !== undefined && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Last Visited: Day {selectedCell.lastVisitedDay}
+                      </p>
+                    )}
+                    {selectedCell.basinId && (
+                      <p className="text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Basin:</span> {basins.find(b => b.id === selectedCell.basinId)?.name || selectedCell.basinId}
+                      </p>
+                    )}
+                    {selectedCell.dungeonId && (
+                      <p className="text-sm">
+                        <span className="text-gray-500 dark:text-gray-400">Dungeon:</span> {dungeons.find(d => d.id === selectedCell.dungeonId)?.name || selectedCell.dungeonId}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    size="xs"
+                    colorScheme="gray"
+                    variant="ghost"
+                    onClick={() => dispatch({ type: 'SET_SELECTED_CELL', payload: null })}
+                  >
+                    ✕
+                  </Button>
+                </div>
+                
+                <div className="mt-3">
+                  <h4 className="font-bold text-sm border-b border-gray-300 dark:border-gray-700 pb-1 mb-1">Resources</h4>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <p className="text-sm">
+                      <span className="text-gray-500 dark:text-gray-400">Food:</span> {selectedCell.resources.food}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-500 dark:text-gray-400">Water:</span> {selectedCell.resources.water}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-500 dark:text-gray-400">Health:</span> {selectedCell.resources.health}
+                    </p>
+                    <p className="text-sm">
+                      <span className="text-gray-500 dark:text-gray-400">Energy:</span> {selectedCell.resources.energy}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Configuration Panel */}
-      <div className="mt-4 bg-gray-800 rounded-lg p-4">
+      <div className="mt-4 bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
         <h2 className="text-xl mb-2">Configuration</h2>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div>
             <label htmlFor="seed" className="block mb-1">Maze Seed</label>
-            <input 
-              type="text" 
-              id="seed" 
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
+            <Input
+              type="text"
+              id="seed"
               placeholder="Enter seed (optional)"
               value={mazeSeed}
-              onChange={(e) => dispatch({ type: 'SET_MAZE_SEED', payload: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_MAZE_SEED', payload: e.target.value })}
             />
           </div>
           <div>
             <label htmlFor="mazeWidth" className="block mb-1">Width</label>
-            <input 
-              type="number" 
-              id="mazeWidth" 
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
+            <Input
+              type="number"
+              id="mazeWidth"
               value={mazeWidth}
-              onChange={(e) => dispatch({ type: 'SET_MAZE_WIDTH', payload: parseInt(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_MAZE_WIDTH', payload: parseInt(e.target.value) })}
               min="20"
               max="100"
             />
           </div>
           <div>
             <label htmlFor="mazeHeight" className="block mb-1">Height</label>
-            <input 
-              type="number" 
-              id="mazeHeight" 
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
+            <Input
+              type="number"
+              id="mazeHeight"
               value={mazeHeight}
-              onChange={(e) => dispatch({ type: 'SET_MAZE_HEIGHT', payload: parseInt(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_MAZE_HEIGHT', payload: parseInt(e.target.value) })}
               min="20"
               max="100"
             />
           </div>
           <div>
             <label htmlFor="basinCount" className="block mb-1">Basin Count</label>
-            <input 
-              type="number" 
-              id="basinCount" 
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
+            <Input
+              type="number"
+              id="basinCount"
               value={basinCount}
-              onChange={(e) => dispatch({ type: 'SET_BASIN_COUNT', payload: parseInt(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_BASIN_COUNT', payload: parseInt(e.target.value) })}
               min="1"
               max="10"
             />
           </div>
           <div>
             <label htmlFor="populationPerBasin" className="block mb-1">Population Per Basin</label>
-            <input 
-              type="number" 
-              id="populationPerBasin" 
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
+            <Input
+              type="number"
+              id="populationPerBasin"
               value={populationPerBasin}
-              onChange={(e) => dispatch({ type: 'SET_POPULATION_PER_BASIN', payload: parseInt(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_POPULATION_PER_BASIN', payload: parseInt(e.target.value) })}
               min="10"
               max="500"
             />
           </div>
           <div>
             <label htmlFor="casualtyRate" className="block mb-1">Initial Casualty Rate (%)</label>
-            <input 
-              type="number" 
-              id="casualtyRate" 
-              className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
+            <Input
+              type="number"
+              id="casualtyRate"
               value={initialCasualtyRate}
-              onChange={(e) => dispatch({ type: 'SET_INITIAL_CASUALTY_RATE', payload: parseInt(e.target.value) })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_INITIAL_CASUALTY_RATE', payload: parseInt(e.target.value) })}
               min="0"
               max="90"
             />
           </div>
         </div>
         <div className="mt-4">
-          <button 
-            className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
+          <Button
+            colorScheme="green"
             onClick={generateMaze}
           >
             Generate New Maze
-          </button>
+          </Button>
         </div>
       </div>
 
-      <footer className="mt-8 text-center text-gray-500 text-sm">
+      <footer className="mt-8 text-center text-gray-600 dark:text-gray-500 text-sm">
         <p>MOG-Simulator &copy; 2025 - A Maze Civilization Simulator</p>
         <p className="mt-1 text-xs">Press Ctrl+H for help and keyboard shortcuts</p>
       </footer>
       
       {/* Save Modal */}
       {saveModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
-          <div className="bg-gray-800 rounded-lg p-6 w-96 relative">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 relative text-gray-800 dark:text-white">
             <h2 className="text-xl mb-4">Save Simulation</h2>
             <div className="mb-4">
               <label htmlFor="saveName" className="block mb-1">Save Name</label>
-              <input
+              <Input
                 type="text"
                 id="saveName"
-                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
                 value={saveName}
-                onChange={(e) => dispatch({ type: 'SET_SAVE_NAME', payload: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_SAVE_NAME', payload: e.target.value })}
                 placeholder="Enter save name"
               />
             </div>
             <div className="flex justify-end space-x-2">
-              <button
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded cursor-pointer"
+              <Button
+                colorScheme="gray"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1317,9 +1412,9 @@ function App() {
                 }}
               >
                 Cancel
-              </button>
-              <button
-                className={`bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded ${!saveName ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+              </Button>
+              <Button
+                colorScheme="blue"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1328,7 +1423,7 @@ function App() {
                 disabled={!saveName}
               >
                 Save
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1336,8 +1431,8 @@ function App() {
       
       {/* Load Modal */}
       {loadModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
-          <div className="bg-gray-800 rounded-lg p-6 w-96 relative">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 relative text-gray-800 dark:text-white">
             <h2 className="text-xl mb-4">Load Simulation</h2>
             
             {/* Saved Games */}
@@ -1348,21 +1443,23 @@ function App() {
                   {saveList.map(name => (
                     <div
                       key={name}
-                      className={`flex justify-between items-center p-2 rounded mb-1 ${
-                        selectedSave === name ? 'bg-blue-900' : 'bg-gray-900'
+                      className={`flex justify-between items-center p-2 rounded mb-1 cursor-pointer ${
+                        selectedSave === name ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-700'
                       }`}
                       onClick={() => dispatch({ type: 'SET_SELECTED_SAVE', payload: name })}
                     >
-                      <span>{name}</span>
-                      <button
-                        className="text-red-500 hover:text-red-400"
+                      <span className="truncate">{name}</span>
+                      <Button
+                        size="xs"
+                        colorScheme="gray"
+                        variant="ghost"
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDelete(name);
                         }}
                       >
                         ✕
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -1372,17 +1469,16 @@ function App() {
             {/* Import File */}
             <div className="mb-4">
               <h3 className="text-lg mb-2">Import from File</h3>
-              <input
+              <Input
                 type="file"
                 accept=".json"
-                className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2"
-                onChange={(e) => dispatch({ type: 'SET_IMPORT_FILE', payload: e.target.files?.[0] || null })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_IMPORT_FILE', payload: e.target.files?.[0] || null })}
               />
             </div>
             
             <div className="flex justify-end space-x-2">
-              <button
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded cursor-pointer"
+              <Button
+                colorScheme="gray"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1390,10 +1486,10 @@ function App() {
                 }}
               >
                 Cancel
-              </button>
+              </Button>
               {importFile ? (
-                <button
-                  className="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded cursor-pointer"
+                <Button
+                  colorScheme="purple"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1401,10 +1497,10 @@ function App() {
                   }}
                 >
                   Import
-                </button>
+                </Button>
               ) : (
-                <button
-                  className={`bg-green-600 hover:bg-green-700 px-4 py-2 rounded ${!selectedSave ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                <Button
+                  colorScheme="green"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1413,7 +1509,7 @@ function App() {
                   disabled={!selectedSave}
                 >
                   Load
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -1422,13 +1518,13 @@ function App() {
       
       {/* Confirmation Dialog */}
       {showConfirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
-          <div className="bg-gray-800 rounded-lg p-6 w-96 relative">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-96 relative text-gray-800 dark:text-white">
             <h2 className="text-xl mb-4">Confirm Action</h2>
             <p className="mb-4">{confirmationMessage}</p>
             <div className="flex justify-end space-x-2">
-              <button
-                className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded cursor-pointer"
+              <Button
+                colorScheme="gray"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1436,9 +1532,9 @@ function App() {
                 }}
               >
                 Cancel
-              </button>
-              <button
-                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded cursor-pointer"
+              </Button>
+              <Button
+                colorScheme="red"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1448,7 +1544,7 @@ function App() {
                 }}
               >
                 Confirm
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1457,7 +1553,7 @@ function App() {
       {/* Tooltip */}
       {showTooltip && (
         <div
-          className="fixed bg-gray-800 text-white px-3 py-1 rounded shadow-lg text-sm z-[90]"
+          className="fixed bg-gray-700 dark:bg-gray-800 text-white px-3 py-1 rounded shadow-lg text-sm z-[9999]"
           style={{
             left: `${tooltipPosition.x}px`,
             top: `${tooltipPosition.y}px`,
@@ -1470,12 +1566,14 @@ function App() {
       
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
-          <div className="bg-gray-800 rounded-lg p-6 w-[500px] relative">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-[500px] relative text-gray-800 dark:text-white">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl">Settings</h2>
-              <button
-                className="text-gray-400 hover:text-white cursor-pointer"
+              <Button
+                size="xs"
+                colorScheme="gray"
+                variant="ghost"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1483,7 +1581,7 @@ function App() {
                 }}
               >
                 ✕
-              </button>
+              </Button>
             </div>
             
             <div className="space-y-4">
@@ -1496,13 +1594,12 @@ function App() {
                       id="darkMode"
                       className="sr-only"
                       checked={preferences.darkMode}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, darkMode: e.target.checked } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, darkMode: e.target.checked } })}
                     />
-                    <div className={`block w-10 h-6 rounded-full ${preferences.darkMode ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.darkMode ? 'transform translate-x-4' : ''}`}></div>
+                    <div className={`block w-10 h-6 rounded-full ${preferences.darkMode ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.darkMode ? 'transform translate-x-full' : ''}`}></div>
                   </div>
                 </label>
-                <span className="text-xs text-gray-400">(Coming soon)</span>
               </div>
               
               <div className="flex items-center justify-between">
@@ -1514,10 +1611,10 @@ function App() {
                       id="showEventNotifications"
                       className="sr-only"
                       checked={preferences.showEventNotifications}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, showEventNotifications: e.target.checked } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, showEventNotifications: e.target.checked } })}
                     />
-                    <div className={`block w-10 h-6 rounded-full ${preferences.showEventNotifications ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.showEventNotifications ? 'transform translate-x-4' : ''}`}></div>
+                    <div className={`block w-10 h-6 rounded-full ${preferences.showEventNotifications ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.showEventNotifications ? 'transform translate-x-full' : ''}`}></div>
                   </div>
                 </label>
               </div>
@@ -1531,10 +1628,10 @@ function App() {
                       id="highlightNotableAgents"
                       className="sr-only"
                       checked={preferences.highlightNotableAgents}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, highlightNotableAgents: e.target.checked } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, highlightNotableAgents: e.target.checked } })}
                     />
-                    <div className={`block w-10 h-6 rounded-full ${preferences.highlightNotableAgents ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.highlightNotableAgents ? 'transform translate-x-4' : ''}`}></div>
+                    <div className={`block w-10 h-6 rounded-full ${preferences.highlightNotableAgents ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.highlightNotableAgents ? 'transform translate-x-full' : ''}`}></div>
                   </div>
                 </label>
               </div>
@@ -1548,13 +1645,12 @@ function App() {
                       id="soundEffects"
                       className="sr-only"
                       checked={preferences.soundEffects}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, soundEffects: e.target.checked } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, soundEffects: e.target.checked } })}
                     />
-                    <div className={`block w-10 h-6 rounded-full ${preferences.soundEffects ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.soundEffects ? 'transform translate-x-4' : ''}`}></div>
+                    <div className={`block w-10 h-6 rounded-full ${preferences.soundEffects ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.soundEffects ? 'transform translate-x-full' : ''}`}></div>
                   </div>
                 </label>
-                <span className="text-xs text-gray-400">(Coming soon)</span>
               </div>
               
               <div className="flex items-center justify-between">
@@ -1566,10 +1662,10 @@ function App() {
                       id="compactUI"
                       className="sr-only"
                       checked={preferences.compactUI}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, compactUI: e.target.checked } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, compactUI: e.target.checked } })}
                     />
-                    <div className={`block w-10 h-6 rounded-full ${preferences.compactUI ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.compactUI ? 'transform translate-x-4' : ''}`}></div>
+                    <div className={`block w-10 h-6 rounded-full ${preferences.compactUI ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.compactUI ? 'transform translate-x-full' : ''}`}></div>
                   </div>
                 </label>
               </div>
@@ -1583,15 +1679,15 @@ function App() {
                       id="useSVGMode"
                       className="sr-only"
                       checked={preferences.useSVGMode}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, useSVGMode: e.target.checked } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, useSVGMode: e.target.checked } })}
                     />
-                    <div className={`block w-10 h-6 rounded-full ${preferences.useSVGMode ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.useSVGMode ? 'transform translate-x-4' : ''}`}></div>
+                    <div className={`block w-10 h-6 rounded-full ${preferences.useSVGMode ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.useSVGMode ? 'transform translate-x-full' : ''}`}></div>
                   </div>
                 </label>
               </div>
               
-              <div className="border-t border-gray-700 pt-4">
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
                 <div className="flex items-center justify-between mb-2">
                   <label htmlFor="autoSaveEnabled" className="flex items-center cursor-pointer">
                     <span className="mr-2">Auto-Save</span>
@@ -1601,25 +1697,26 @@ function App() {
                         id="autoSaveEnabled"
                         className="sr-only"
                         checked={preferences.autoSaveEnabled}
-                        onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, autoSaveEnabled: e.target.checked } })}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, autoSaveEnabled: e.target.checked } })}
                       />
-                      <div className={`block w-10 h-6 rounded-full ${preferences.autoSaveEnabled ? 'bg-blue-600' : 'bg-gray-600'}`}></div>
-                      <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.autoSaveEnabled ? 'transform translate-x-4' : ''}`}></div>
-                    </div>
-                  </label>
+                      <div className={`block w-10 h-6 rounded-full ${preferences.autoSaveEnabled ? 'bg-blue-600' : 'bg-gray-400'}`}></div>
+                      <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition ${preferences.autoSaveEnabled ? 'transform translate-x-full' : ''}`}></div>
+                  </div>
+                </label>
                 </div>
                 
                 {preferences.autoSaveEnabled && (
                   <div className="flex items-center mt-2">
                     <label htmlFor="autoSaveInterval" className="mr-2">Save every</label>
-                    <input
+                    <Input
                       type="number"
                       id="autoSaveInterval"
-                      className="w-16 bg-gray-900 border border-gray-700 rounded px-2 py-1"
                       value={preferences.autoSaveInterval}
-                      onChange={(e) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, autoSaveInterval: Math.max(1, parseInt(e.target.value)) } })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => dispatch({ type: 'SET_PREFERENCES', payload: { ...preferences, autoSaveInterval: Math.max(1, parseInt(e.target.value)) } })}
                       min="1"
                       max="60"
+                      width="64px"
+                      size="sm"
                     />
                     <span className="ml-2">minutes</span>
                   </div>
@@ -1628,8 +1725,8 @@ function App() {
             </div>
             
             <div className="mt-6 flex justify-end">
-              <button
-                className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded cursor-pointer"
+              <Button
+                colorScheme="blue"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1637,7 +1734,7 @@ function App() {
                 }}
               >
                 Save Settings
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -1645,12 +1742,14 @@ function App() {
       
       {/* Help Modal */}
       {showHelp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]" style={{ pointerEvents: 'auto' }}>
-          <div className="bg-gray-800 rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto relative">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[1000]" style={{ pointerEvents: 'auto' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto relative text-gray-800 dark:text-white">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl">Help & Keyboard Shortcuts</h2>
-              <button
-                className="text-gray-400 hover:text-white cursor-pointer"
+              <Button
+                size="xs"
+                colorScheme="gray"
+                variant="ghost"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1658,34 +1757,34 @@ function App() {
                 }}
               >
                 ✕
-              </button>
+              </Button>
             </div>
             
             <div className="mb-4">
               <h3 className="text-lg font-bold mb-2">Keyboard Shortcuts</h3>
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-gray-900 p-2 rounded">
-                  <span className="inline-block bg-gray-700 px-2 py-1 rounded text-xs mr-2">Space</span>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 rounded">
+                  <span className="inline-block bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">Space</span>
                   Start/Pause simulation
                 </div>
-                <div className="bg-gray-900 p-2 rounded">
-                  <span className="inline-block bg-gray-700 px-2 py-1 rounded text-xs mr-2">N</span>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 rounded">
+                  <span className="inline-block bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">N</span>
                   Next day
                 </div>
-                <div className="bg-gray-900 p-2 rounded">
-                  <span className="inline-block bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+R</span>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 rounded">
+                  <span className="inline-block bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+R</span>
                   Reset simulation
                 </div>
-                <div className="bg-gray-900 p-2 rounded">
-                  <span className="inline-block bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+S</span>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 rounded">
+                  <span className="inline-block bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+S</span>
                   Save simulation
                 </div>
-                <div className="bg-gray-900 p-2 rounded">
-                  <span className="inline-block bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+L</span>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 rounded">
+                  <span className="inline-block bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+L</span>
                   Load simulation
                 </div>
-                <div className="bg-gray-900 p-2 rounded">
-                  <span className="inline-block bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+H</span>
+                <div className="bg-gray-100 dark:bg-gray-900 p-2 rounded">
+                  <span className="inline-block bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">Ctrl+H</span>
                   Show/hide help
                 </div>
               </div>

@@ -13,6 +13,7 @@ interface SVGMazeGridProps {
   cellSize?: number;
   selectedAgent?: IAgent | null;
   selectedDungeon?: Dungeon | null;
+  selectedCell?: Cell | null; // Added selectedCell prop
   onCellClick?: (cell: Cell) => void;
   onAgentClick?: (agent: IAgent) => void;
   onBasinClick?: (basin: Basin) => void;
@@ -28,6 +29,7 @@ const SVGMazeGrid: React.FC<SVGMazeGridProps> = ({
   cellSize = 16,
   selectedAgent = null,
   selectedDungeon = null,
+  selectedCell = null, // Destructure selectedCell
   onCellClick,
   onAgentClick,
   onBasinClick,
@@ -70,44 +72,20 @@ const SVGMazeGrid: React.FC<SVGMazeGridProps> = ({
     setDragStartY(e.clientY - offsetY);
   };
 
-  // Throttle mouse move events for performance
-  const throttleMouseMove = (
-    func: (e: React.MouseEvent) => void,
-    delay: number
-  ): ((e: React.MouseEvent) => void) => {
-    let lastCall = 0;
-    return (e: React.MouseEvent) => {
-      const now = Date.now();
-      if (now - lastCall >= delay) {
-        lastCall = now;
-        func(e);
-      }
-    };
-  };
-  
-  // Throttle wheel events for performance
-  const throttleWheel = (
-    func: (e: React.WheelEvent) => void,
-    delay: number
-  ): ((e: React.WheelEvent) => void) => {
-    let lastCall = 0;
-    return (e: React.WheelEvent) => {
-      const now = Date.now();
-      if (now - lastCall >= delay) {
-        lastCall = now;
-        func(e);
-      }
-    };
-  };
 
-  // Handle mouse move for dragging (throttled)
+  const lastMouseMoveCall = useRef(0);
+  // Handle mouse move for dragging
   const handleMouseMove = useCallback(
-    throttleMouseMove((e: React.MouseEvent) => {
-      if (isDragging) {
-        setOffsetX(e.clientX - dragStartX);
-        setOffsetY(e.clientY - dragStartY);
+    (e: React.MouseEvent) => {
+      const now = Date.now();
+      if (now - lastMouseMoveCall.current >= 16) { // ~60fps
+        lastMouseMoveCall.current = now;
+        if (isDragging) {
+          setOffsetX(e.clientX - dragStartX);
+          setOffsetY(e.clientY - dragStartY);
+        }
       }
-    }, 16), // ~60fps
+    },
     [isDragging, dragStartX, dragStartY]
   );
 
@@ -121,30 +99,35 @@ const SVGMazeGrid: React.FC<SVGMazeGridProps> = ({
     setIsDragging(false);
   };
 
-  // Handle wheel for zooming (throttled)
+  const lastWheelCall = useRef(0);
+  // Handle wheel for zooming
   const handleWheel = useCallback(
-    throttleWheel((e: React.WheelEvent) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.5, Math.min(3, zoom * zoomFactor));
-      
-      // Adjust offset to zoom around the cursor position
-      const rect = gridRef.current?.getBoundingClientRect();
-      if (rect) {
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+    (e: React.WheelEvent) => {
+      const now = Date.now();
+      if (now - lastWheelCall.current >= 16) { // ~60fps
+        lastWheelCall.current = now;
+        e.preventDefault();
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newZoom = Math.max(0.5, Math.min(3, zoom * zoomFactor));
         
-        const mouseGridX = (mouseX - offsetX) / (cellSize * zoom);
-        const mouseGridY = (mouseY - offsetY) / (cellSize * zoom);
-        
-        const newOffsetX = mouseX - mouseGridX * cellSize * newZoom;
-        const newOffsetY = mouseY - mouseGridY * cellSize * newZoom;
-        
-        setZoom(newZoom);
-        setOffsetX(newOffsetX);
-        setOffsetY(newOffsetY);
+        // Adjust offset to zoom around the cursor position
+        const rect = gridRef.current?.getBoundingClientRect();
+        if (rect) {
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+          
+          const mouseGridX = (mouseX - offsetX) / (cellSize * zoom);
+          const mouseGridY = (mouseY - offsetY) / (cellSize * zoom);
+          
+          const newOffsetX = mouseX - mouseGridX * cellSize * newZoom;
+          const newOffsetY = mouseY - mouseGridY * cellSize * newZoom;
+          
+          setZoom(newZoom);
+          setOffsetX(newOffsetX);
+          setOffsetY(newOffsetY);
+        }
       }
-    }, 16), // ~60fps
+    },
     [zoom, offsetX, offsetY, cellSize]
   );
 
@@ -189,6 +172,7 @@ const SVGMazeGrid: React.FC<SVGMazeGridProps> = ({
                   size={cellSize * zoom}
                   onClick={() => onCellClick && onCellClick(cell)}
                   isSelectedDungeon={false}
+                  isSelectedCell={selectedCell?.id === cell.id} // Pass isSelectedCell
                 />
               </div>
             );
@@ -208,7 +192,8 @@ const SVGMazeGrid: React.FC<SVGMazeGridProps> = ({
     viewportHeight,
     gridWidth,
     gridHeight,
-    onCellClick
+    onCellClick,
+    selectedCell // Added selectedCell to dependencies
   ]);
 
   // Render basins (memoized)
@@ -339,8 +324,8 @@ const SVGMazeGrid: React.FC<SVGMazeGridProps> = ({
         );
       })
       .map(agent => {
-        const x = offsetX + agent.location.x * cellSize * zoom;
-        const y = offsetY + agent.location.y * cellSize * zoom;
+        const x = offsetX + agent.location.x * cellSize * zoom + (cellSize * zoom) / 2;
+        const y = offsetY + agent.location.y * cellSize * zoom + (cellSize * zoom) / 2;
         
         return (
           <div

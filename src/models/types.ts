@@ -12,12 +12,54 @@ export interface Position {
 export interface Resources {
   food: number;
   water: number;
+  health: number; // Health replenishment resource
+  energy: number; // Energy replenishment resource
 }
 
 /**
  * Cell types in the maze
  */
 export type CellType = 'wall' | 'path' | 'basin' | 'dungeon';
+
+/**
+ * Cell interface (for models/Cell.ts)
+ */
+export interface ICell {
+  id: string;
+  type: CellType;
+  position: Position;
+  resources: Resources;
+  occupants: IAgent[];
+  discovered: boolean;
+  lastVisitedDay?: number; // Day the cell was last visited
+  basinId?: string;
+  dungeonId?: string;
+}
+
+/**
+ * Simplified Cell type for worker processing
+ */
+export interface SimplifiedCell {
+  id: string;
+  type: CellType;
+  position: Position;
+  resources: Resources;
+  discovered: boolean;
+  lastVisitedDay?: number;
+  basinId?: string;
+}
+
+/**
+ * Simplified Basin type for worker processing
+ */
+export interface SimplifiedBasin {
+  id: string;
+  name: string;
+  location: Position;
+  radius: number;
+  resources: Resources;
+  cells: SimplifiedCell[]; // Simplified cells within the basin
+}
 
 /**
  * Agent status in the simulation
@@ -33,6 +75,7 @@ export interface AgentStats {
   thirst: number;
   energy: number;
   morale: number;
+  resourcefulness: number; // Multiplier for resource collection (e.g., 1.0 is normal)
 }
 
 /**

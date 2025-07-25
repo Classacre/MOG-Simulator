@@ -55,7 +55,8 @@ export class Agent implements IAgent {
       hunger: 100,
       thirst: 100,
       energy: 100,
-      morale: 100
+      morale: 100,
+      resourcefulness: 1.0 // Multiplier for resource collection, 1.0 is normal
     };
     this.birthright = birthright;
     this.augment = null;
@@ -89,13 +90,12 @@ export class Agent implements IAgent {
     this.stats.hunger = Math.max(0, this.stats.hunger - 10);
     this.stats.thirst = Math.max(0, this.stats.thirst - 15);
     
-    // Recover energy if resting
-    if (this.stats.energy < 100) {
-      this.stats.energy = Math.min(100, this.stats.energy + 20);
-    }
-    
-    // Health effects from hunger and thirst
-    if (this.stats.hunger <= 0 || this.stats.thirst <= 0) {
+    // Agents recover energy and health slightly each day, more if resting
+    this.stats.energy = Math.min(100, this.stats.energy + 5);
+    this.stats.health = Math.min(100, this.stats.health + 2);
+
+    // Health effects from hunger, thirst, and low energy
+    if (this.stats.hunger <= 0 || this.stats.thirst <= 0 || this.stats.energy <= 0) {
       this.stats.health = Math.max(0, this.stats.health - 15);
     }
     
@@ -104,7 +104,7 @@ export class Agent implements IAgent {
       this.status = 'dead';
     } else if (this.stats.health < 30) {
       this.status = 'injured';
-    } else if (this.status === 'injured' && this.stats.health > 50) {
+    } else if (this.status === 'injured' && this.stats.health >= 50) { // Changed from > to >=
       this.status = 'alive';
     }
     

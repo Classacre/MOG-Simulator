@@ -786,6 +786,7 @@ export function updateAgents(
     agent.updateDailyStats();
     
     // Check if agent died from hunger or thirst
+    // @ts-expect-error: Agent status can legitimately become 'dead' after updateDailyStats()
     if (agent.status === 'dead') {
       events.push(`Day ${day}: ${agent.name} died from starvation or dehydration.`);
       continue;
@@ -812,3 +813,8 @@ export function updateAgents(
   
   return events;
 }
+
+/**
+ * Agent status types
+ */
+export type AgentStatus = 'alive' | 'injured' | 'dead';

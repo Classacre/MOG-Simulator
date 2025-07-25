@@ -51,7 +51,7 @@ export function generateEvents(context: EventContext): Event[] {
  * @returns Array of random events
  */
 function generateRandomEvents(context: EventContext): Event[] {
-  const { agents, grid, day } = context;
+  const { agents, day } = context;
   const events: Event[] = [];
   
   // Only generate random events for living agents
@@ -61,7 +61,7 @@ function generateRandomEvents(context: EventContext): Event[] {
   for (const agent of livingAgents) {
     if (Math.random() < 0.05) {
       // Generate a random event for this agent
-      const event = createRandomEvent(agent, grid, day);
+      const event = createRandomEvent(agent, day);
       if (event) {
         events.push(event);
         
@@ -80,7 +80,7 @@ function generateRandomEvents(context: EventContext): Event[] {
  * @returns Array of interaction events
  */
 function generateInteractionEvents(context: EventContext): Event[] {
-  const { agents, grid, day } = context;
+  const { agents, day } = context;
   const events: Event[] = [];
   
   // Only consider living agents
@@ -111,7 +111,7 @@ function generateInteractionEvents(context: EventContext): Event[] {
         } while (agent1.id === agent2.id);
         
         // Generate interaction event
-        const event = createInteractionEvent(agent1, agent2, grid, day);
+        const event = createInteractionEvent(agent1, agent2, day);
         if (event) {
           events.push(event);
           
@@ -131,7 +131,7 @@ function generateInteractionEvents(context: EventContext): Event[] {
  * @returns Array of resource events
  */
 function generateResourceEvents(context: EventContext): Event[] {
-  const { agents, grid, basins, day } = context;
+  const { agents, grid, day } = context;
   const events: Event[] = [];
   
   // Only consider living agents
@@ -144,7 +144,7 @@ function generateResourceEvents(context: EventContext): Event[] {
       // 30% chance of finding resources when desperate
       if (Math.random() < 0.3) {
         // Generate resource event
-        const event = createResourceEvent(agent, grid, basins, day);
+        const event = createResourceEvent(agent, grid, day);
         if (event) {
           events.push(event);
           
@@ -202,7 +202,7 @@ function generateDungeonEvents(context: EventContext): Event[] {
  * @param day Current day
  * @returns Random event or null
  */
-function createRandomEvent(agent: Agent, grid: Cell[][], day: number): Event | null {
+function createRandomEvent(agent: Agent, day: number): Event | null {
   // Define possible random events
   const randomEvents = [
     {
@@ -337,7 +337,6 @@ function createRandomEvent(agent: Agent, grid: Cell[][], day: number): Event | n
 function createInteractionEvent(
   agent1: Agent,
   agent2: Agent,
-  grid: Cell[][],
   day: number
 ): Event | null {
   // Check if agents are from the same basin
@@ -563,7 +562,6 @@ function createInteractionEvent(
 function createResourceEvent(
   agent: Agent,
   grid: Cell[][],
-  basins: Basin[],
   day: number
 ): Event | null {
   // Check if agent is in a basin

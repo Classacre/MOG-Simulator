@@ -251,6 +251,7 @@ This document outlines the step-by-step implementation plan for the MOG-Simulato
    - Create batch processing for multiple steps
    - Implement summary generation
    - Add auto-pause triggers
+   - Implement resource replenishment for basins
 
 3. Create AccelerationControls component (src/components/ControlPanel/AccelerationControls.jsx)
    - Implement acceleration UI

@@ -1,8 +1,10 @@
+import type { Position, AgentStatus, AgentStats, SimplifiedCell, SimplifiedBasin } from '../models/types';
+
 // Web Worker for handling heavy computations
 // This prevents UI blocking during intensive operations
 
 // Define message types
-type WorkerMessageType = 
+type WorkerMessageType =
   | 'CALCULATE_PATHS'
   | 'BATCH_AGENT_UPDATE';
 
@@ -33,25 +35,24 @@ interface PathCalculationResponse {
 interface SimplifiedAgent {
   id: string;
   name: string;
-  status: 'alive' | 'injured' | 'dead';
-  stats: {
-    health: number;
-    hunger: number;
-    thirst: number;
-    energy: number;
-    morale: number;
-  };
-  location: { x: number; y: number };
+  status: AgentStatus;
+  stats: AgentStats;
+  location: Position;
   daysSurvived: number;
+  knownMap: Set<string>; // Added knownMap for cell discovery
 }
 
 interface BatchAgentUpdateRequest {
   agents: SimplifiedAgent[]; // Simplified agent data
+  cells: SimplifiedCell[][]; // Full grid of simplified cells
+  basins: SimplifiedBasin[]; // Simplified basins
   day: number;
 }
 
 interface BatchAgentUpdateResponse {
   updatedAgents: SimplifiedAgent[];
+  updatedCells: SimplifiedCell[][]; // Return updated cells
+  updatedBasins: SimplifiedBasin[]; // Return updated basins
   events: string[];
   id: string;
 }
@@ -114,43 +115,126 @@ function handlePathCalculation(request: PathCalculationRequest, id: string): voi
 
 // Handle batch agent update requests
 function handleBatchAgentUpdate(request: BatchAgentUpdateRequest, id: string): void {
-  const { agents, day } = request;
-  
-  // Process agents in batches
+  const { agents, cells, basins, day } = request;
+
+  // Deep clone cells and basins to avoid direct modification of the original objects
+  // This is important because the worker receives a copy of the data, and we want to return
+  // modified copies, not mutate the original received objects.
+  const updatedCells: SimplifiedCell[][] = JSON.parse(JSON.stringify(cells));
+  const updatedBasins: SimplifiedBasin[] = JSON.parse(JSON.stringify(basins));
+
+  const events: string[] = [];
+
+  // --- Basin Replenishment Logic ---
+  updatedBasins.forEach(basin => {
+    // Basins replenish resources daily
+    basin.resources.food = Math.min(1000, basin.resources.food + 10); // Example: Add 10 food daily, max 1000
+    basin.resources.water = Math.min(1000, basin.resources.water + 15); // Example: Add 15 water daily, max 1000
+    basin.resources.health = Math.min(1000, basin.resources.health + 5); // Example: Add 5 health daily, max 1000
+    basin.resources.energy = Math.min(1000, basin.resources.energy + 8); // Example: Add 8 energy daily, max 1000
+  });
+
+  // --- Agent Update Logic ---
   const updatedAgents = agents.map(agent => {
-    // Simplified agent update logic
     if (agent.status === 'dead') return agent;
-    
-    // Update stats
+
+    // Get current cell of the agent
+    const currentCell = updatedCells[agent.location.y]?.[agent.location.x];
+
+    if (currentCell) {
+      // Mark cell as discovered by the agent
+      agent.knownMap.add(currentCell.id);
+      
+      // Update cell's last visited day
+      currentCell.lastVisitedDay = day;
+
+      // --- Cell Resource Diminution ---
+      // If the cell is not a basin and has not been visited today, diminish its resources
+      if (currentCell.type !== 'basin' && currentCell.lastVisitedDay !== day) {
+        currentCell.resources.food = Math.max(0, currentCell.resources.food - 5);
+        currentCell.resources.water = Math.max(0, currentCell.resources.water - 5);
+        currentCell.resources.health = Math.max(0, currentCell.resources.health - 2);
+        currentCell.resources.energy = Math.max(0, currentCell.resources.energy - 2);
+      }
+
+      // --- Agent Interaction with Cell Resources (Replenishment from Basins) ---
+      if (currentCell.type === 'basin') {
+        const basin = updatedBasins.find(b => b.id === currentCell.basinId);
+        if (basin) {
+          // Agent consumes resources from the basin
+          const consumedFood = Math.min(basin.resources.food, 20);
+          const consumedWater = Math.min(basin.resources.water, 20);
+          const consumedHealth = Math.min(basin.resources.health, 10);
+          const consumedEnergy = Math.min(basin.resources.energy, 15);
+
+          basin.resources.food -= consumedFood;
+          basin.resources.water -= consumedWater;
+          basin.resources.health -= consumedHealth;
+          basin.resources.energy -= consumedEnergy;
+
+          agent.stats.hunger = Math.min(100, agent.stats.hunger + consumedFood);
+          agent.stats.thirst = Math.min(100, agent.stats.thirst + consumedWater);
+          agent.stats.health = Math.min(100, agent.stats.health + consumedHealth);
+          agent.stats.energy = Math.min(100, agent.stats.energy + consumedEnergy);
+        }
+      } else {
+        // Agent consumes resources from non-basin cells
+        const consumedFood = Math.min(currentCell.resources.food, 5);
+        const consumedWater = Math.min(currentCell.resources.water, 5);
+        const consumedHealth = Math.min(currentCell.resources.health, 1);
+        const consumedEnergy = Math.min(currentCell.resources.energy, 2);
+
+        currentCell.resources.food -= consumedFood;
+        currentCell.resources.water -= consumedWater;
+        currentCell.resources.health -= consumedHealth;
+        currentCell.resources.energy -= consumedEnergy;
+
+        agent.stats.hunger = Math.min(100, agent.stats.hunger + consumedFood);
+        agent.stats.thirst = Math.min(100, agent.stats.thirst + consumedWater);
+        agent.stats.health = Math.min(100, agent.stats.health + consumedHealth);
+        agent.stats.energy = Math.min(100, agent.stats.energy + consumedEnergy);
+      }
+    }
+
+    // Daily stat updates (hunger, thirst decrease, health, energy recovery)
     agent.stats.hunger = Math.max(0, agent.stats.hunger - 10);
     agent.stats.thirst = Math.max(0, agent.stats.thirst - 15);
-    
-    // Check if agent dies from hunger/thirst
+    agent.stats.energy = Math.min(100, agent.stats.energy + 5); // Slight energy recovery
+    agent.stats.health = Math.min(100, agent.stats.health + 2); // Slight health recovery
+
+    // Health effects from hunger, thirst, and low energy
     if (agent.stats.hunger <= 0 || agent.stats.thirst <= 0) {
       agent.stats.health = Math.max(0, agent.stats.health - 15);
+      events.push(`Day ${day}: ${agent.name} is suffering from hunger/thirst.`);
     }
-    
+    if (agent.stats.energy <= 0) {
+      agent.stats.health = Math.max(0, agent.stats.health - 10);
+      events.push(`Day ${day}: ${agent.name} is exhausted.`);
+    }
+
     // Update status based on health
     if (agent.stats.health <= 0) {
       agent.status = 'dead';
+      events.push(`Day ${day}: ${agent.name} died.`);
+    } else if (agent.stats.health < 30) {
+      agent.status = 'injured';
+    } else if (agent.status === 'injured' && agent.stats.health >= 50) {
+      agent.status = 'alive';
     }
-    
+
     // Increment days survived if alive
     if (agent.status !== 'dead') {
       agent.daysSurvived++;
     }
-    
+
     return agent;
   });
-  
-  // Generate events for significant changes
-  const events = updatedAgents
-    .filter(agent => agent.status === 'dead' && agent.daysSurvived > 0)
-    .map(agent => `Day ${day}: ${agent.name} died from starvation or dehydration.`);
   
   // Send result back to main thread
   const response: BatchAgentUpdateResponse = {
     updatedAgents,
+    updatedCells,
+    updatedBasins,
     events,
     id
   };
