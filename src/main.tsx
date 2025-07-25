@@ -15,8 +15,8 @@ const system = createSystem(defaultConfig, {
         },
       },
       fonts: {
-        heading: { value: "'Figtree', sans-serif" },
-        body: { value: "'Figtree', sans-serif" },
+        heading: { value: "'Staatliches', sans-serif" },
+        body: { value: "'Roboto', sans-serif" },
       },
     },
   },
